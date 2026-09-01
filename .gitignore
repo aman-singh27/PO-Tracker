@@ -1,0 +1,23 @@
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Node / frontend builds
+frontend/node_modules/
+frontend/dist/
+frontend/coverage/
+
+# Environment and editor state
+.env
+.env.*
+!.env.example
+.vscode/
+*.log
+
+# Local database and uploaded documents
+*.sqlite3
+media/

@@ -1,0 +1,8 @@
+Django>=5.1,<5.3
+djangorestframework>=3.15,<3.17
+openpyxl>=3.1
+pypdf>=5.0
+psycopg[binary]>=3.2
+pytest>=8.0
+pytest-django>=4.9
+hypothesis>=6.0

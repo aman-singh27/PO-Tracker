@@ -1,0 +1,1 @@
+import{clsx,type ClassValue}from"clsx";import{twMerge}from"tailwind-merge";export const cn=(...input:ClassValue[])=>twMerge(clsx(input));export const money=(value="0")=>new Intl.NumberFormat("en-IN",{style:"currency",currency:"INR",minimumFractionDigits:2}).format(Number(value))
