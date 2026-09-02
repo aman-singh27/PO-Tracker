@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+﻿import { useEffect, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { Save } from "lucide-react"
 import type { LineItem } from "../api/types"
@@ -6,8 +6,120 @@ import { poApi } from "../api/client"
 import { Button, Card, Input } from "../components/ui"
 import { LineItemGrid } from "../components/LineItemGrid"
 
-export function PoEditorPage() { const navigate = useNavigate(); const [lines, setLines] = useState<LineItem[]>([]); const [error, setError] = useState(""); const [saving, setSaving] = useState(false); const [form, setForm] = useState({ po_number: "", po_date: "", client_name: "", site_name: "", po_category: "", gst_rate: "0" })
-  useEffect(() => { const handler = (event: KeyboardEvent) => { if (event.ctrlKey && event.key.toLowerCase() === "s") { event.preventDefault(); (document.getElementById("po-form") as HTMLFormElement | null)?.requestSubmit() } }; window.addEventListener("keydown", handler); return () => window.removeEventListener("keydown", handler) }, [])
-  const update = (key: keyof typeof form) => (event: React.ChangeEvent<HTMLInputElement>) => setForm({ ...form, [key]: event.target.value })
-  async function submit(event: React.FormEvent) { event.preventDefault(); if (!lines.some(line => line.description && line.qty_ordered && line.rate)) { setError("Add at least one complete line item before saving."); return } setSaving(true); setError(""); try { const response = await poApi.create({ ...form, line_items: lines }); navigate(`/po/${response.data.id}`) } catch { setError("The PO could not be saved. Your entry is still here; correct any duplicate PO number or retry.") } finally { setSaving(false) } }
-  return <section className="page"><header className="page-header"><div><p className="eyebrow">Purchasing / Purchase orders</p><h1>Add purchase order</h1><p className="subtle">Use the grid with your keyboard or paste rows directly from Excel.</p></div></header><form id="po-form" onSubmit={submit}><Card className="form-card"><div className="form-grid"><label>PO number<Input value={form.po_number} onChange={update("po_number")} required autoFocus /></label><label>PO date<Input type="date" value={form.po_date} onChange={update("po_date")} required /></label><label>Client<Input value={form.client_name} onChange={update("client_name")} required /></label><label>Site <span className="optional">optional</span><Input value={form.site_name} onChange={update("site_name")} /></label><label>Category <span className="optional">optional</span><Input value={form.po_category} onChange={update("po_category")} /></label><label>Default GST rate<Input inputMode="decimal" value={form.gst_rate} onChange={update("gst_rate")} /></label></div></Card><Card className="form-card"><div className="section-heading"><div><h2>Line items</h2><p>Amounts are calculated automatically and cannot be typed.</p></div></div><LineItemGrid value={lines} onChange={setLines} gstRate={form.gst_rate} /></Card>{error && <p className="form-error" role="alert">{error}</p>}<div className="form-actions"><Button type="submit" disabled={saving}><Save size={16}/>{saving ? "Saving…" : "Save PO"}</Button><span className="helper">Ctrl+S to save</span></div></form></section> }
+type FormState = {
+  po_number: string
+  po_date: string
+  client_name: string
+  site_name: string
+  po_category: string
+  gst_rate: string
+}
+
+export function PoEditorPage() {
+  const navigate = useNavigate()
+  const [lines, setLines] = useState<LineItem[]>([])
+  const [error, setError] = useState("")
+  const [saving, setSaving] = useState(false)
+  const [form, setForm] = useState<FormState>({
+    po_number: "",
+    po_date: "",
+    client_name: "",
+    site_name: "",
+    po_category: "",
+    gst_rate: "0",
+  })
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.key.toLowerCase() === "s") {
+        e.preventDefault()
+        ;(document.getElementById("po-form") as HTMLFormElement | null)?.requestSubmit()
+      }
+    }
+    window.addEventListener("keydown", handler)
+    return () => window.removeEventListener("keydown", handler)
+  }, [])
+
+  const update = (key: keyof FormState) => (e: React.ChangeEvent<HTMLInputElement>) =>
+    setForm(f => ({ ...f, [key]: e.target.value }))
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!lines.some(l => l.description && l.qty_ordered && l.rate)) {
+      setError("Add at least one complete line item before saving.")
+      return
+    }
+    setSaving(true)
+    setError("")
+    try {
+      const response = await poApi.create({ ...form, line_items: lines })
+      navigate(`/po/${response.data.id}`)
+    } catch {
+      setError("The PO could not be saved. Your entry is still here — correct any duplicate PO number or retry.")
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <section className="page">
+      <header className="page-header">
+        <div>
+          <p className="eyebrow">Purchasing / Purchase orders</p>
+          <h1>Add purchase order</h1>
+          <p className="subtle">Use the grid with your keyboard or paste rows directly from Excel.</p>
+        </div>
+      </header>
+
+      <form id="po-form" onSubmit={submit}>
+        <Card className="form-card">
+          <div className="form-grid">
+            <label>
+              PO number
+              <Input value={form.po_number} onChange={update("po_number")} required autoFocus />
+            </label>
+            <label>
+              PO date
+              <Input type="date" value={form.po_date} onChange={update("po_date")} required />
+            </label>
+            <label>
+              Client
+              <Input value={form.client_name} onChange={update("client_name")} required />
+            </label>
+            <label>
+              Site <span className="optional">optional</span>
+              <Input value={form.site_name} onChange={update("site_name")} />
+            </label>
+            <label>
+              Category <span className="optional">optional</span>
+              <Input value={form.po_category} onChange={update("po_category")} />
+            </label>
+            <label>
+              Default GST rate
+              <Input inputMode="decimal" value={form.gst_rate} onChange={update("gst_rate")} />
+            </label>
+          </div>
+        </Card>
+
+        <Card className="form-card">
+          <div className="section-heading">
+            <div>
+              <h2>Line items</h2>
+              <p>Amounts are calculated automatically and cannot be typed.</p>
+            </div>
+          </div>
+          <LineItemGrid value={lines} onChange={setLines} gstRate={form.gst_rate} />
+        </Card>
+
+        {error && <p className="form-error" role="alert">{error}</p>}
+
+        <div className="form-actions">
+          <Button type="submit" disabled={saving}>
+            <Save size={16} />{saving ? "Saving…" : "Save PO"}
+          </Button>
+          <span className="helper">Ctrl+S to save</span>
+        </div>
+      </form>
+    </section>
+  )
+}

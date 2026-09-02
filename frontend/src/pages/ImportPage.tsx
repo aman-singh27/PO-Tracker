@@ -1,11 +1,112 @@
-import { useState } from "react"
+﻿import { useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { ClipboardPaste, FileText, Upload } from "lucide-react"
 import { importApi } from "../api/client"
 import { Button, Card, Input } from "../components/ui"
 
+const PASTE_PLACEHOLDER = [
+  "1\tPO-123\t02/09/2026\t(AN22) HCL\tMaterial\tSupply of fixtures\t20\tNos\t1200\t24000",
+  "\t\t\t\tService\tInstallation\t1\tJob\t5000\t5000",
+].join("\n")
+
 export function ImportPage() {
-  const [client, setClient] = useState(""); const [site, setSite] = useState(""); const [poNumber, setPoNumber] = useState(""); const [tsv, setTsv] = useState(""); const [error, setError] = useState(""); const [saving, setSaving] = useState(false); const navigate = useNavigate()
-  async function create() { setError(""); setSaving(true); try { const result = await importApi.paste({ client_name: client, site_name: site, po_number: poNumber, tsv }); navigate(`/po/${result.data.id}`) } catch (err: any) { const body=err?.response?.data; setError(err?.response?.status === 409 ? "This PO already exists. Find and open it from Purchase orders to update it." : Object.values(body || { detail: "Could not import this PO." }).flat().join(" ")) } finally { setSaving(false) } }
-  return <section className="page"><header className="page-header"><div><p className="eyebrow">Fast PO intake</p><h1>Paste from Excel</h1><p className="subtle">Copy the familiar rows from your tracker. Clean data creates a new PO immediately; existing POs are protected from replacement.</p></div></header><Card className="form-card"><div className="form-grid"><label>Client<Input value={client} onChange={e => setClient(e.target.value)} placeholder="e.g. HCL Technologies" required /></label><label>Site <span className="optional">optional</span><Input value={site} onChange={e => setSite(e.target.value)} placeholder="e.g. AN22" /></label><label>PO number <span className="optional">only if not in column B</span><Input value={poNumber} onChange={e => setPoNumber(e.target.value)} /></label></div><label className="paste-label"><span><ClipboardPaste size={16}/> Excel rows</span><textarea value={tsv} onChange={e => setTsv(e.target.value)} placeholder={"1\tPO-123\t02/09/2026\t(AN22) HCL\tMaterial\tSupply of fixtures\t20\tNos\t1200\t24000\n\t\t\t\tService\tInstallation\t1\tJob\t5000\t5000"} /></label>{error && <div className="inline-alert" role="alert">{error}</div>}<div className="form-actions"><Button onClick={create} disabled={saving || !tsv.trim() || !client.trim()}><Upload size={16}/>{saving ? "Creating PO…" : "Create PO from paste"}</Button><span className="helper">Supports the full Excel layout and simple Description / Qty / Unit / Rate rows.</span></div></Card><Card className="pdf-review"><FileText size={28}/><h2>PO PDF</h2><p>PDF extraction remains a reviewed draft. Use Excel paste for the fastest reliable entry today.</p></Card></section>
+  const [client, setClient] = useState("")
+  const [site, setSite] = useState("")
+  const [poNumber, setPoNumber] = useState("")
+  const [tsv, setTsv] = useState("")
+  const [error, setError] = useState("")
+  const [saving, setSaving] = useState(false)
+  const navigate = useNavigate()
+
+  async function create() {
+    setError("")
+    setSaving(true)
+    try {
+      const result = await importApi.paste({ client_name: client, site_name: site, po_number: poNumber, tsv })
+      navigate(`/po/${result.data.id}`)
+    } catch (err: unknown) {
+      const e = err as { response?: { status?: number; data?: Record<string, string[]> } }
+      if (e?.response?.status === 409) {
+        setError("This PO already exists. Find and open it from Purchase orders to update it.")
+      } else {
+        setError(
+          Object.values(e?.response?.data || { detail: "Could not import this PO." })
+            .flat()
+            .join(" ")
+        )
+      }
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <section className="page">
+      <header className="page-header">
+        <div>
+          <p className="eyebrow">Fast PO intake</p>
+          <h1>Paste from Excel</h1>
+          <p className="subtle">
+            Copy the familiar rows from your tracker. Clean data creates a new PO immediately;
+            existing POs are protected from replacement.
+          </p>
+        </div>
+      </header>
+
+      <Card className="form-card">
+        <div className="form-grid">
+          <label>
+            Client
+            <Input
+              value={client}
+              onChange={e => setClient(e.target.value)}
+              placeholder="e.g. HCL Technologies"
+              required
+            />
+          </label>
+          <label>
+            Site <span className="optional">optional</span>
+            <Input
+              value={site}
+              onChange={e => setSite(e.target.value)}
+              placeholder="e.g. AN22"
+            />
+          </label>
+          <label>
+            PO number <span className="optional">only if not in column B</span>
+            <Input
+              value={poNumber}
+              onChange={e => setPoNumber(e.target.value)}
+            />
+          </label>
+        </div>
+
+        <label className="paste-label">
+          <span><ClipboardPaste size={16} /> Excel rows</span>
+          <textarea
+            value={tsv}
+            onChange={e => setTsv(e.target.value)}
+            placeholder={PASTE_PLACEHOLDER}
+          />
+        </label>
+
+        {error && <div className="inline-alert" role="alert">{error}</div>}
+
+        <div className="form-actions">
+          <Button onClick={create} disabled={saving || !tsv.trim() || !client.trim()}>
+            <Upload size={16} />{saving ? "Creating PO…" : "Create PO from paste"}
+          </Button>
+          <span className="helper">
+            Supports the full Excel layout and simple Description / Qty / Unit / Rate rows.
+          </span>
+        </div>
+      </Card>
+
+      <Card className="pdf-review">
+        <FileText size={28} />
+        <h2>PO PDF</h2>
+        <p>PDF extraction remains a reviewed draft. Use Excel paste for the fastest reliable entry today.</p>
+      </Card>
+    </section>
+  )
 }
