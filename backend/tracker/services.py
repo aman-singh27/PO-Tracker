@@ -57,8 +57,9 @@ def create_challan(*, data, allocations):
     return challan
 
 @transaction.atomic
-def create_bill(*, data, allocations):
-    validate_bill_number(data['bill_number'])
+def create_bill(*, data, allocations, validate_number=True):
+    if validate_number:
+        validate_bill_number(data['bill_number'])
     if not allocations: raise ValidationError({'allocations':'At least one allocation is required.'})
     bill=Bill.objects.create(**data); allocate_bill(bill=bill, allocations=allocations)
     return bill

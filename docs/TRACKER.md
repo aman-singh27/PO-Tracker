@@ -1,9 +1,19 @@
 # PO Tracker — Build Tracker
 
 **Version:** 1.0
-**Last Updated:** 2026-09-01
-**Status:** IN PROGRESS — Phases 0-3 backend complete, frontend functional
-**Current Phase:** Phase 3 — Legacy Migration (refinement)
+**Last Updated:** 2026-09-02
+**Status:** BUILD COMPLETE FOR REVIEW — ready for a controlled team pilot; legacy workbook remains deliberately uncommitted pending reconciliation
+**Current Phase:** Controlled pilot preparation — see [REBUILD_PLAN.md](REBUILD_PLAN.md)
+
+## Rebuild Update — 2026-09-03
+
+- [DONE] Equal-access authenticated workflow; retained audit attribution.
+- [DONE] Manual PO lifecycle: Draft, Ordered, Partially built, Partially paid, Closed.
+- [DONE] Editable PO workspace, allocation-based delivery/bill entry, source-document upload and XLSX export.
+- [DONE] Action dashboard: outstanding receivables, stuck work, Ariba backlog and GST snapshot.
+- [DONE] Excel-style new-PO paste with continuation-row handling and duplicate PO protection.
+- [DONE] SQLite migration compatibility for local/test use; PostgreSQL views remain enabled in production.
+- [PARTIAL] Legacy workbook migration reader. It now recognises Satya Praksh and the standalone HCL sheet and consolidates cross-sheet HCL duplicates. Current dry-run: 253 POs / 1,798 lines / ₹5.28 cr. This still does not reconcile to the older workbook analysis (259 / 2,134 / ₹12.08 cr), and the source workbook appears to have changed shape since that scan. Do not commit legacy data until a reviewed reconciliation baseline is approved.
 
 ---
 
@@ -118,12 +128,11 @@ Tasks mirror [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md). Items marked **(M
 - [DONE] Excel export (basic CSV/XLSX)
 
 ### Frontend
-- [TODO] **LineItemGrid** — keyboard navigation (Tab/Shift+Tab/Enter)
-- [TODO] **LineItemGrid** — Ctrl+D copy-down
-- [TODO] **LineItemGrid** — multi-row paste
-- [TODO] **LineItemGrid** — auto-amount, GST default, item-type guess
-- [TODO] PO detail page + MoneyStrip
-- [TODO] **(MANDATORY)** PO detail totals reconcile to the rupee vs the workbook
+- [DONE] Editable PO detail workspace with lifecycle, notes, line items and optimistic-save protection
+- [DONE] Delivery challan, bill, payment and Ariba activity entry within the PO workspace
+- [DONE] Source document attachment, responsive action dashboard and XLSX hand-off export
+- [DONE] Configurable stuck-work and overdue-payment thresholds
+- [PARTIAL] Legacy-workbook reconciliation remains blocked by the changed source workbook; see Rebuild Update above
 
 ---
 
@@ -216,6 +225,7 @@ Tasks mirror [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md). Items marked **(M
 
 | # | Issue | Found in | Status | Fix |
 |---|---|---|---|---|
+| 1 | Legacy workbook totals do not reconcile to the earlier scan because the available workbook has changed shape. | Import dry-run | OPEN | Do not commit legacy data until Accounts approves a reconciliation baseline. |
 
 ---
 
@@ -225,6 +235,10 @@ Tasks mirror [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md). Items marked **(M
 
 | # | Date | Decision | Why |
 |---|---|---|---|
+| 1 | 2026-09-02 | Individual authenticated users receive equal full access; audit logging remains. | Owner explicitly rejected business roles/approvals. |
+| 2 | 2026-09-02 | PO lifecycle is manually selected; item delivery/billing/payment facts remain allocation-derived. | A simple PO stage cannot represent items progressing at different times. |
+| 3 | 2026-09-02 | Excel paste creates new POs only; existing POs are opened and edited directly. | Prevents accidental replacement of existing history. |
+| 4 | 2026-09-02 | XLSX is the primary external hand-off export. | Internal team requires a familiar reusable format. |
 
 ---
 

@@ -17,6 +17,8 @@ else:
 AUTH_PASSWORD_VALIDATORS = []
 LANGUAGE_CODE='en-us'; TIME_ZONE='Asia/Kolkata'; USE_I18N=True; USE_TZ=True
 STATIC_URL='static/'
+MEDIA_URL='/media/'
+MEDIA_ROOT=BASE_DIR / 'media'
 DEFAULT_AUTO_FIELD='django.db.models.BigAutoField'
 CSRF_COOKIE_HTTPONLY=False
 CSRF_TRUSTED_ORIGINS = os.getenv('DJANGO_CSRF_TRUSTED_ORIGINS', 'http://localhost:5173,http://localhost:5174,http://127.0.0.1:5173,http://127.0.0.1:5174').split(',')

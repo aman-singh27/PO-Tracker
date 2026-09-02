@@ -79,7 +79,7 @@ class TestPermissionMatrix:
         resp = client.get("/api/v1/pos")
         assert resp.status_code == 200
 
-    # --- PO Create (POST) — only staff and admin ---
+    # --- PO Create (POST) — all active tracker accounts ---
     def test_staff_can_create_po(self, db, test_data, staff_user):
         client = TestClient()
         client.force_login(staff_user)
@@ -112,7 +112,7 @@ class TestPermissionMatrix:
         # 201 Created, or 400 if serializer validation differs — at least not 403
         assert resp.status_code != 403
 
-    def test_owner_cannot_create_po(self, db, test_data, owner_user):
+    def test_owner_can_create_po(self, db, test_data, owner_user):
         client = TestClient()
         client.force_login(owner_user)
         resp = client.post(
@@ -124,9 +124,9 @@ class TestPermissionMatrix:
             },
             content_type="application/json",
         )
-        assert resp.status_code == 403
+        assert resp.status_code != 403
 
-    def test_accounts_cannot_create_po(self, db, test_data, accounts_user):
+    def test_accounts_can_create_po(self, db, test_data, accounts_user):
         client = TestClient()
         client.force_login(accounts_user)
         resp = client.post(
@@ -138,9 +138,9 @@ class TestPermissionMatrix:
             },
             content_type="application/json",
         )
-        assert resp.status_code == 403
+        assert resp.status_code != 403
 
-    # --- Short-close — only owner and admin ---
+    # --- Short-close — all active tracker accounts ---
     def test_owner_can_short_close(self, db, test_data, owner_user):
         client = TestClient()
         client.force_login(owner_user)
@@ -171,7 +171,7 @@ class TestPermissionMatrix:
         )
         assert resp.status_code == 200
 
-    def test_staff_cannot_short_close(self, db, test_data, staff_user, admin_user):
+    def test_staff_can_short_close(self, db, test_data, staff_user, admin_user):
         po3 = create_po(
             data={
                 "client": test_data["client"],
@@ -188,9 +188,9 @@ class TestPermissionMatrix:
             {"reason": "Staff attempt"},
             content_type="application/json",
         )
-        assert resp.status_code == 403
+        assert resp.status_code == 200
 
-    def test_accounts_cannot_short_close(self, db, test_data, accounts_user, admin_user):
+    def test_accounts_can_short_close(self, db, test_data, accounts_user, admin_user):
         po4 = create_po(
             data={
                 "client": test_data["client"],
@@ -207,7 +207,7 @@ class TestPermissionMatrix:
             {"reason": "Accounts attempt"},
             content_type="application/json",
         )
-        assert resp.status_code == 403
+        assert resp.status_code == 200
 
     # --- Search — all authenticated roles ---
     @pytest.mark.parametrize("role", ["admin", "staff", "accounts", "owner"])
@@ -218,24 +218,24 @@ class TestPermissionMatrix:
         resp = client.get("/api/v1/search?q=HCL")
         assert resp.status_code == 200
 
-    # --- Review queue — admin only ---
+    # --- Review queue — all active tracker accounts ---
     def test_admin_can_view_review(self, db, admin_user):
         client = TestClient()
         client.force_login(admin_user)
         resp = client.get("/api/v1/review")
         assert resp.status_code == 200
 
-    def test_staff_cannot_view_review(self, db, staff_user):
+    def test_staff_can_view_review(self, db, staff_user):
         client = TestClient()
         client.force_login(staff_user)
         resp = client.get("/api/v1/review")
-        assert resp.status_code == 403
+        assert resp.status_code == 200
 
-    def test_owner_cannot_view_review(self, db, owner_user):
+    def test_owner_can_view_review(self, db, owner_user):
         client = TestClient()
         client.force_login(owner_user)
         resp = client.get("/api/v1/review")
-        assert resp.status_code == 403
+        assert resp.status_code == 200
 
     # --- Unauthenticated user gets rejected ---
     def test_unauthenticated_gets_403(self, db):

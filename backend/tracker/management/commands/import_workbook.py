@@ -1,4 +1,5 @@
 """Import PO Tracker Excel with full lifecycle: POs, Lines, Bills."""
+import re
 from collections import Counter
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
@@ -35,11 +36,20 @@ class Command(BaseCommand):
             raise CommandError(f"Workbook not found: {path}")
 
         records, flags = self._read(path)
+        # The same HCL PO can appear in active, pending and working sheets.
+        # Dry-run must report the same consolidated set that commit will create.
+        consolidated = []
+        seen = set()
+        for record in records:
+            key = (record['client_code'], record['po_number'])
+            if key not in seen:
+                seen.add(key); consolidated.append(record)
+        records = consolidated
 
         if options["dry_run"]:
             po_count = len(records)
             line_count = sum(len(r["lines"]) for r in records)
-            total_value = sum(r["total"] for r in records)
+            total_value = sum((r["total"] for r in records), Decimal('0'))
             bill_count = sum(len(r.get("bills", {})) for r in records)
             self.stdout.write(str({
                 "purchase_orders": po_count,
@@ -193,6 +203,13 @@ class Command(BaseCommand):
 
         for sheet in workbook.worksheets:
             sheet_title = sheet.title
+            if sheet_title == 'Satya Praksh':
+                records.extend(self._read_satya_sheet(sheet))
+                continue
+            if sheet_title == '8100014714':
+                record=self._read_standalone_hcl_sheet(sheet)
+                if record: records.append(record)
+                continue
             current_po = None
             
             for row_no, row in enumerate(sheet.iter_rows(values_only=True), 1):
@@ -233,16 +250,18 @@ class Command(BaseCommand):
                 if str(po_number_raw).lower() in ("po no.", "po no", "po number"):
                     continue
                 
-                # NEW PO
-                if po_number_raw and str(po_number_raw).isdigit():
+                # New PO. Formats differ by client; only recognised workbook markers
+                # are excluded. A valid PO must have a real item description.
+                marker = str(po_number_raw).strip().lower()
+                if po_number_raw and description and marker not in {'po changed','po amended','po - amended','changed','cancelled','po cancelled','order cancelled by client'} and 'cancelled due to' not in marker and 'changed with tax' not in marker and 'revised with tax' not in marker:
                     site_code, site_name = self._parse_site(site_raw)
                     po_date = self._parse_date(po_date_raw)
                     
                     current_po = {
                         "po_number": str(po_number_raw),
                         "po_date": po_date,
-                        "client_code": sheet_title.upper()[:30].replace(" ", "-").replace(".", "-"),
-                        "client_name": sheet_title,
+                        "client_code": self._client_for_sheet(sheet_title)[0],
+                        "client_name": self._client_for_sheet(sheet_title)[1],
                         "site_code": site_code,
                         "site_name": site_name,
                         "lines": [],
@@ -317,6 +336,46 @@ class Command(BaseCommand):
                             })
 
         return records, flags
+
+    def _client_for_sheet(self, title):
+        lowered=title.lower()
+        if title in {'HCL PO','Pending PO','Sheet1','HCL Sec-60','8100014714'}: return ('HCL','HCL Technologies')
+        if 'dlf' in lowered: return ('DLF','DLF Mall of India')
+        if 'metlife' in lowered: return ('METLIFE','Metlife')
+        if 'satya' in lowered: return ('SATYA-PRAKASH','Satya Prakash')
+        return (title.upper()[:30].replace(' ','-').replace('.','-'),title)
+
+    def _read_satya_sheet(self, sheet):
+        records=[]; client_code,client_name=self._client_for_sheet(sheet.title)
+        for row_no,row in enumerate(sheet.iter_rows(values_only=True),1):
+            values=[self._normalize(value) for value in row]
+            po_number=values[1] if len(values)>1 else ''
+            description=values[7] if len(values)>7 else ''
+            basic=values[4] if len(values)>4 else ''
+            if not po_number or str(po_number).lower() in {'po no','po no.'} or not description: continue
+            try: amount=Decimal(str(basic).replace(',',''))
+            except (InvalidOperation,ValueError): continue
+            records.append({'po_number':str(po_number),'po_date':self._parse_date(values[2] if len(values)>2 else ''),'client_code':client_code,'client_name':client_name,'site_code':(values[3] if len(values)>3 else '')[:30] or None,'site_name':values[3] if len(values)>3 else '', 'lines':[{'description':description,'item_type':classify_item_type(description),'qty_ordered':Decimal('1'),'unit':'Job','rate':amount,'amount':amount,'gst_rate':Decimal('0'),'source_sheet':sheet.title,'source_row':row_no}], 'bills':{},'total':amount})
+        return records
+
+    def _read_standalone_hcl_sheet(self, sheet):
+        client_code,client_name=self._client_for_sheet(sheet.title); po_number='8100014714'; po_date=None; site_code=None; site_name=''; lines=[]
+        for row_no,row in enumerate(sheet.iter_rows(values_only=True),1):
+            values=[self._normalize(value) for value in row]
+            text=' '.join(values[:2]).lower()
+            if 'po. no' in text:
+                po_number=values[1].split('-')[-1].strip()
+            elif 'po date' in text:
+                po_date=self._parse_date(values[1].split('-')[-1].strip())
+            elif 'site-' in text:
+                site_code,site_name=self._parse_site(values[1].split('-',1)[-1].strip())
+            # This sheet shifts description/qty/unit/rate/amount one column left.
+            if len(values)>5 and values[1] and values[1].lower() not in {'material description','total','grand total'}:
+                try: qty=Decimal(values[2].replace(',','')); rate=Decimal(values[4].replace(',','')); amount=Decimal(values[5].replace(',',''))
+                except (InvalidOperation,ValueError): continue
+                lines.append({'description':values[1],'item_type':classify_item_type(values[1]),'qty_ordered':qty,'unit':values[3] or 'Nos','rate':rate,'amount':amount,'gst_rate':Decimal('0'),'source_sheet':sheet.title,'source_row':row_no})
+        if not lines:return None
+        return {'po_number':po_number,'po_date':po_date,'client_code':client_code,'client_name':client_name,'site_code':site_code,'site_name':site_name,'lines':lines,'bills':{},'total':sum((line['amount'] for line in lines),Decimal('0'))}
 
     def _normalize(self, value):
         if value is None:

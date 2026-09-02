@@ -79,3 +79,13 @@ Then a **feedback gate** — Release 1 runs in real use before Phases 5–9 (cha
 | Is the billing-rate divergence on 24 lines legitimate? | Phase 6 | Owner |
 
 Full detail in [PRD.md §10](PRD.md).
+# Current Direction
+
+The original v1 documents were written before the owner clarified the required workflow. Start with these current documents:
+
+1. [OWNER_DECISIONS.md](OWNER_DECISIONS.md) — binding owner decisions.
+2. [PRODUCT_BLUEPRINT.md](PRODUCT_BLUEPRINT.md) — product and UX behaviour.
+3. [EXCEL_COMPATIBILITY.md](EXCEL_COMPATIBILITY.md) — familiar Excel-format entry and migration contract.
+4. [REBUILD_PLAN.md](REBUILD_PLAN.md) — current repository gap analysis and delivery order.
+
+The v1 documents remain useful technical background, but where they conflict with `OWNER_DECISIONS.md`, the owner decisions win.

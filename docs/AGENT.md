@@ -2,6 +2,8 @@
 
 **Read this first.** It tells you what this project is, which document answers which question, and the rules that must not be broken.
 
+> **Current-direction override (2026-09-02):** Before using this v1 build guide, read [OWNER_DECISIONS.md](OWNER_DECISIONS.md), [PRODUCT_BLUEPRINT.md](PRODUCT_BLUEPRINT.md), [EXCEL_COMPATIBILITY.md](EXCEL_COMPATIBILITY.md) and [REBUILD_PLAN.md](REBUILD_PLAN.md). Those documents supersede the earlier role matrix, mandatory import-preview rule and any conflicting product assumptions. The allocation, decimal-money, audit and no-line-item-status design rules remain valid.
+
 ---
 
 ## Project Context

@@ -53,10 +53,10 @@ def test_normalizers_are_conservative():
 
 
 @pytest.mark.django_db
-def test_permission_classes_reject_roles(client, actor, line):
+def test_any_active_tracker_user_has_the_same_workflow_access(client, actor, line):
     client.force_login(actor)
     response = client.post(f'/api/v1/lines/{line.id}/short-close', {'reason':'approved'}, content_type='application/json')
     assert response.status_code == 200
     actor.tracker_role.role = 'staff'; actor.tracker_role.save()
     response = client.post(f'/api/v1/lines/{line.id}/short-close', {'reason':'again'}, content_type='application/json')
-    assert response.status_code == 403
+    assert response.status_code == 200

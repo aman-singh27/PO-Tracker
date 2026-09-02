@@ -16,7 +16,7 @@ const MATRIX: Record<Permission, Role[]> = {
 export function usePermission(permission: Permission): boolean {
   const user = useAuthStore((s) => s.user)
   if (!user) return false
-  return MATRIX[permission].includes(user.role)
+  return Boolean(user.role && MATRIX[permission].includes(user.role))
 }
 
 export function useRole(): Role | null {

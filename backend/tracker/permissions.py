@@ -6,10 +6,9 @@ def get_role(user):
     return record.role if record else None
 class IsTrackerUser(BasePermission):
     def has_permission(self,request,view): return bool(request.user.is_authenticated and get_role(request.user))
-class _Roles(IsTrackerUser):
-    roles=()
-    def has_permission(self,request,view): return super().has_permission(request,view) and get_role(request.user) in self.roles
-class CanEditPO(_Roles): roles=(ROLE_STAFF,ROLE_ADMIN)
-class CanRecordMoney(_Roles): roles=(ROLE_ACCOUNTS,ROLE_ADMIN)
-class CanShortClose(_Roles): roles=(ROLE_OWNER,ROLE_ADMIN)
-class IsAdmin(_Roles): roles=(ROLE_ADMIN,)
+class _FullAccess(IsTrackerUser):
+    """All active tracker accounts have the same operational permissions."""
+class CanEditPO(_FullAccess): pass
+class CanRecordMoney(_FullAccess): pass
+class CanShortClose(_FullAccess): pass
+class IsAdmin(_FullAccess): pass
