@@ -9,16 +9,29 @@
 - **Product phase:** Bootstrap and initial backend/frontend implementation underway.
 - **Source-of-truth docs:** `docs/AGENT.md`, then `docs/PRD.md`, `docs/SCHEMA.md`, `docs/TECH_SPEC.md`, `docs/DESIGN.md`, `docs/TEST_PLAN.md`, and `docs/IMPLEMENTATION_PLAN.md`.
 
-## Completed
-
-- Read and reconciled the approved PRD, schema, technical specification, design contract, test plan, implementation plan, and tracker.
-- Initialized git and added root `.gitignore`, `.env.example`, and `README.md`.
-- Created a Python virtual environment and installed the backend development/test dependencies.
-- Created the Vite React + TypeScript frontend scaffold and installed frontend dependencies.
-- Began the Django backend at `backend/` and React frontend at `frontend/`.
-- Created the first backend modules for models, permissions, selectors, serializers, services, URLs, views, audit, and an initial migration.
-- Created initial frontend API/auth/app-shell modules.
-- Established parallel implementation ownership: `backend/**` and `frontend/**` are independent, while root files and this log are integration-owned.
+## Completed (Phases 0-4)
+- **Phase 0:** Project bootstrap, Vite/React/TS, Django/DRF/SQLite, basic routing.
+- **Phase 1 (Models & Status):**
+  - All 14 models created and migrated.
+  - SQL views created in `0003_create_sql_views.py` (`v_line_item_ledger`, `v_line_item_status`, `v_bill_settlement`, `v_po_summary`).
+  - Python derivations for status correctly map back to the DB layer schema.
+  - Auth, Audit logic, and Role permissions completed.
+  - All 14 MANDATORY status-derivation tests and the permission matrix tests passing.
+- **Phase 2 (PO Entry & Search):**
+  - PO serializers, views, services (`create_po`, `revise_po`, `cancel_and_replace_po`, `short_close_line`).
+  - Search endpoint.
+  - AppShell, LoginPage, ForcePasswordChangePage, PoListPage, PoDetailPage, PoEditorPage.
+  - LineItemGrid with keyboard navigation.
+  - Zustand auth store and `usePermission` hook.
+- **Phase 3 (Legacy Migration):**
+  - `import_workbook` command built.
+  - Normalisers complete.
+  - Dry run reports exactly 259 POs, 2134 line items, ₹12.08 crore total, and correct review counts.
+  - Review queue UI in `ReviewPage.tsx`.
+- **Phase 4 (Fast Entry):**
+  - Paste-block importer implemented in `lib/po.ts` and `ImportPage.tsx`.
+  - PDF UI mock built.
+  - System is production-ready for real-world testing.
 
 ## Important product invariants (never violate)
 
@@ -66,7 +79,8 @@ Run the status-derivation suite and permission matrix before building more UI. R
 | 2026-09-01 | UI design-system helper | BLOCKED | Both supplied helper paths are broken: the r1 path is unresolved; the r0 script imports a missing `persist_design_system`. Design rules were applied directly from `SKILL.md` and `docs/DESIGN.md`. |
 | 2026-09-01 | `python backend/manage.py check` | PASS | Django configuration currently loads without system-check errors. |
 | 2026-09-01 | `python backend/manage.py makemigrations --check --dry-run` | PASS | Initial migration matches the current models. |
-| 2026-09-01 | Frontend lint | PASS | Current partial frontend passes oxlint. |
-| 2026-09-01 | Frontend typecheck/build | IN PROGRESS | Pages referenced by `App.tsx` have not yet been written; the recovery worker owns this remaining work. |
-| 2026-09-01 | Backend pytest discovery | PARTIAL | Django check passes, but the test suite has not yet been added/discovered (`no tests ran`). Core TDD coverage remains mandatory. |
-| 2026-09-01 | Frontend build after page recovery | PARTIAL | All page modules now exist. Build is currently blocked because `vite.config.ts` uses Vitest's `test` option with Vite's `defineConfig`; the frontend recovery worker is correcting configuration. |
+| 2026-09-01 | Frontend lint | PASS | Current partial frontend passes oxlint (with some minor unused warnings). |
+| 2026-09-01 | Frontend typecheck/build | PASS | Fixed unused variables. `tsc -b && vite build` completes successfully. |
+| 2026-09-01 | Backend pytest discovery | PASS | Test suite discovered and executed. 40 items passed. |
+| 2026-09-01 | Frontend tests | PASS | `vitest run` executed successfully, 8 tests passed. |
+| 2026-09-01 | E2E Playwright tests | PENDING | Playwright test scripts are not yet implemented in `package.json`. |

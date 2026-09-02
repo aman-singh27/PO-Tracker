@@ -11,6 +11,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework import status
 from .models import PurchaseOrder,POLineItem,ImportReviewItem,Challan,Bill,Payment
+from django.views.decorators.csrf import csrf_exempt
 from .permissions import IsTrackerUser,CanEditPO,CanShortClose,CanRecordMoney,IsAdmin,get_role
 from .serializers import POSerializer,SimplePOSerializer,LineSerializer,ChallanSerializer,BillSerializer,PaymentSerializer
 from .services import create_po,revise_po,short_close_line,create_challan,create_bill,create_payment
@@ -19,6 +20,7 @@ from .selectors import search, line_status, po_totals, pending_lines
 def _validation(exc): return Response(getattr(exc,'message_dict',{'detail':exc.messages if hasattr(exc,'messages') else str(exc)}),status=400)
 @api_view(['POST'])
 @permission_classes([AllowAny])
+@csrf_exempt
 def login_view(request):
     user=authenticate(request,username=request.data.get('email',''),password=request.data.get('password',''))
     if not user: return Response({'detail':'Invalid email or password.'},status=401)
