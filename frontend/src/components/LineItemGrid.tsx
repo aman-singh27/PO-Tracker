@@ -1,12 +1,16 @@
-﻿import { useEffect, useRef } from "react"
+﻿import { useRef, useEffect } from "react"
 import type { LineItem } from "../api/types"
-import { lineAmount } from "../lib/money"
 import { guessItemType, parsePasteBlock } from "../lib/po"
 
 type Props = { value: LineItem[]; onChange: (lines: LineItem[]) => void; gstRate?: string }
 const blank = (line_no: number, gst_rate = "0"): LineItem => ({
   line_no, description: "", item_type: "material", qty_ordered: "", unit: "", rate: "", gst_rate,
 })
+const lineAmount = (qty: string, rate: string): string => {
+  const q = parseFloat(qty) || 0
+  const r = parseFloat(rate) || 0
+  return (q * r).toFixed(2)
+}
 
 export function LineItemGrid({ value, onChange, gstRate = "0" }: Props) {
   const inputs = useRef<Array<HTMLInputElement | HTMLSelectElement | null>>([])

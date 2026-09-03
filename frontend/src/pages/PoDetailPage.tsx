@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { Link, useParams } from "react-router-dom"
-import { ArrowLeft, Paperclip, Save, Upload } from "lucide-react"
+import { ArrowLeft, Paperclip, Save, Upload, RefreshCw, X } from "lucide-react"
 import { toast } from "sonner"
 import { activityApi, attachmentApi, poApi } from "../api/client"
 import type { LifecycleStage, LineItem, PurchaseOrder } from "../api/types"
@@ -53,6 +53,12 @@ export function PoDetailPage() {
   const [uploading, setUploading] = useState(false)
   const [recording, setRecording] = useState(false)
   const [activity, setActivity] = useState<ActivityForm>(defaultActivity)
+  const [revising, setRevising] = useState(false)
+  const [cancelling, setCancelling] = useState(false)
+  const [showRevisionDialog, setShowRevisionDialog] = useState(false)
+  const [showCancelDialog, setShowCancelDialog] = useState(false)
+  const [revisionReason, setRevisionReason] = useState("")
+  const [cancelReason, setCancelReason] = useState("")
   const fileRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -167,6 +173,57 @@ export function PoDetailPage() {
     }
   }
 
+  async function handleRevise() {
+    if (!po || !revisionReason.trim()) return
+    setRevising(true)
+    setError("")
+    try {
+      const result = await poApi.revise(po.id, {
+        lines: po.lines.map(line => ({
+          ...line,
+          carries_from_line_id: line.id,
+        })),
+        reason: revisionReason,
+      })
+      toast.success("PO revised successfully")
+      setShowRevisionDialog(false)
+      setRevisionReason("")
+      // Navigate to the new revision
+      window.location.href = `/po/${result.data.id}`
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: Record<string, string[]> } }
+      setError(
+        Object.values(e?.response?.data || { detail: "Could not revise PO." })
+          .flat()
+          .join(" ")
+      )
+    } finally {
+      setRevising(false)
+    }
+  }
+
+  async function handleCancel() {
+    if (!po || !cancelReason.trim()) return
+    setCancelling(true)
+    setError("")
+    try {
+      await poApi.cancel(po.id, { reason: cancelReason })
+      toast.success("PO cancelled successfully")
+      setShowCancelDialog(false)
+      setCancelReason("")
+      await refresh()
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: Record<string, string[]> } }
+      setError(
+        Object.values(e?.response?.data || { detail: "Could not cancel PO." })
+          .flat()
+          .join(" ")
+      )
+    } finally {
+      setCancelling(false)
+    }
+  }
+
   const isBillAction = ["payment", "ariba"].includes(activity.kind)
   const recordDisabled =
     recording ||
@@ -202,9 +259,21 @@ export function PoDetailPage() {
           <h1>{po.po_number}</h1>
           <p className="subtle">Update the order, attach documents, and record work as it moves forward.</p>
         </div>
-        <Button onClick={save} disabled={saving}>
-          <Save size={16} />{saving ? "Saving…" : "Save changes"}
-        </Button>
+        <div style={{ display: "flex", gap: "0.5rem" }}>
+          {po.status === 'active' && (
+            <>
+              <Button variant="outline" onClick={() => setShowRevisionDialog(true)} disabled={revising}>
+                <RefreshCw size={16} />{revising ? "Revising…" : "Revise"}
+              </Button>
+              <Button variant="outline" onClick={() => setShowCancelDialog(true)} disabled={cancelling}>
+                <X size={16} />{cancelling ? "Cancelling…" : "Cancel"}
+              </Button>
+            </>
+          )}
+          <Button onClick={save} disabled={saving}>
+            <Save size={16} />{saving ? "Saving…" : "Save changes"}
+          </Button>
+        </div>
       </header>
 
       {error && <div className="inline-alert" role="alert">{error}</div>}
@@ -376,11 +445,99 @@ export function PoDetailPage() {
               <span key={line.id ?? line.line_no}>
                 <StatusBadge status={line.derived_status?.status || line.interim_status || "ORDERED"} />
                 {line.description}
+                {line.item_type === 'service' && line.id && (
+                  <div style={{ display: 'flex', gap: '0.25rem', marginLeft: '0.5rem' }}>
+                    {!line.work_done_on && (
+                      <button
+                        type="button"
+                        className="quick-action"
+                        onClick={async () => {
+                          try {
+                            await poApi.markWorkDone(line.id)
+                            await refresh()
+                            toast.success("Work marked as done")
+                          } catch {
+                            setError("Could not mark work as done")
+                          }
+                        }}
+                        title="Mark work done"
+                      >
+                        Work done
+                      </button>
+                    )}
+                    {line.work_done_on && !line.client_approved_on && (
+                      <button
+                        type="button"
+                        className="quick-action"
+                        onClick={async () => {
+                          try {
+                            await poApi.markApproved(line.id)
+                            await refresh()
+                            toast.success("Work marked as approved")
+                          } catch {
+                            setError("Could not mark work as approved")
+                          }
+                        }}
+                        title="Mark client approved"
+                      >
+                        Approve
+                      </button>
+                    )}
+                  </div>
+                )}
               </span>
             ))}
           </div>
         )}
       </Card>
+
+      {showRevisionDialog && (
+        <div className="dialog-overlay" onClick={() => setShowRevisionDialog(false)}>
+          <Card className="dialog" onClick={e => e.stopPropagation()}>
+            <h3>Revise Purchase Order</h3>
+            <p>Creating a revision will preserve all existing delivery and billing allocations and carry them forward to the new PO.</p>
+            <label>
+              Revision reason
+              <textarea
+                value={revisionReason}
+                onChange={e => setRevisionReason(e.target.value)}
+                placeholder="Explain why this PO is being revised (e.g., 'PO Changed with Tax @18%')"
+                rows={3}
+              />
+            </label>
+            <div className="form-actions">
+              <Button variant="outline" onClick={() => setShowRevisionDialog(false)}>Cancel</Button>
+              <Button onClick={handleRevise} disabled={!revisionReason.trim() || revising}>
+                {revising ? "Creating revision…" : "Create revision"}
+              </Button>
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {showCancelDialog && (
+        <div className="dialog-overlay" onClick={() => setShowCancelDialog(false)}>
+          <Card className="dialog" onClick={e => e.stopPropagation()}>
+            <h3>Cancel Purchase Order</h3>
+            <p>This will mark the PO as cancelled. It will remain visible but excluded from pending work calculations.</p>
+            <label>
+              Cancellation reason
+              <textarea
+                value={cancelReason}
+                onChange={e => setCancelReason(e.target.value)}
+                placeholder="Explain why this PO is being cancelled"
+                rows={3}
+              />
+            </label>
+            <div className="form-actions">
+              <Button variant="outline" onClick={() => setShowCancelDialog(false)}>Cancel</Button>
+              <Button onClick={handleCancel} disabled={!cancelReason.trim() || cancelling}>
+                {cancelling ? "Cancelling…" : "Confirm cancellation"}
+              </Button>
+            </div>
+          </Card>
+        </div>
+      )}
     </section>
   )
 }

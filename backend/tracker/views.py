@@ -13,7 +13,7 @@ from rest_framework import status
 from .models import PurchaseOrder,POLineItem,ImportReviewItem,Challan,ChallanAllocation,Bill,Payment,Client,Site,POAttachment,LegalEntity,TrackerSettings
 from django.views.decorators.csrf import csrf_exempt
 from .permissions import IsTrackerUser,CanEditPO,CanShortClose,CanRecordMoney,IsAdmin,get_role
-from .serializers import POSerializer,SimplePOSerializer,LineSerializer,ChallanSerializer,BillSerializer,PaymentSerializer
+from .serializers import POSerializer,SimplePOSerializer,LineSerializer,ChallanSerializer,BillSerializer,PaymentSerializer,ClientSerializer
 from .services import create_po,revise_po,short_close_line,create_challan,create_bill,create_payment,allocate_bill,validate_bill_number
 from .selectors import search, line_status, po_totals, pending_lines, dashboard_snapshot
 
@@ -202,30 +202,165 @@ def mark_approved(request,pk):
 @api_view(['GET','POST'])
 @permission_classes([CanEditPO])
 def challan_list(request):
-    if request.method=='GET':return Response(ChallanSerializer(Challan.objects.filter(is_deleted=False).prefetch_related('allocations'),many=True).data)
+    if request.method=='GET':
+        qs = Challan.objects.filter(is_deleted=False).select_related('site').prefetch_related('allocations__line_item__po').order_by('-challan_date', '-id')
+        return Response(ChallanSerializer(qs, many=True).data)
     serializer=ChallanSerializer(data=request.data); serializer.is_valid(raise_exception=True); data=serializer.validated_data; allocations=data.pop('allocations',[])
     data['created_by']=request.user
     try: challan=create_challan(data=data,allocations=[{'line_item_id':a['line_item'].id,'qty':a['qty']} for a in allocations])
     except DjangoValidationError as exc:return _validation(exc)
     return Response(ChallanSerializer(challan).data,status=201)
+
 @api_view(['GET','POST'])
 @permission_classes([CanRecordMoney])
 def bill_list(request):
-    if request.method=='GET':return Response(BillSerializer(Bill.objects.filter(is_deleted=False).prefetch_related('allocations'),many=True).data)
+    if request.method=='GET':
+        qs = Bill.objects.filter(is_deleted=False).select_related('legal_entity').prefetch_related('allocations__line_item__po__client')
+        ariba = request.query_params.get('ariba_state')
+        if ariba:
+            qs = qs.filter(ariba_state=ariba)
+        return Response(BillSerializer(qs.order_by('-bill_date', '-id'), many=True).data)
     serializer=BillSerializer(data=request.data); serializer.is_valid(raise_exception=True); data=serializer.validated_data; allocations=data.pop('allocations',[])
     data['created_by']=request.user
-    try: bill=create_bill(data=data,allocations=[{'line_item_id':a['line_item'].id,'qty':a['qty'],'rate':a['rate'],'gst_rate':a['gst_rate']} for a in allocations])
+    needs_review = data.get('needs_review', False)
+    try:
+        validate_bill_number(data['bill_number'])
+    except DjangoValidationError:
+        needs_review = True
+    data['needs_review'] = needs_review
+    try: bill=create_bill(data=data,allocations=[{'line_item_id':a['line_item'].id,'qty':a['qty'],'rate':a['rate'],'gst_rate':a['gst_rate']} for a in allocations], validate_number=False)
     except DjangoValidationError as exc:return _validation(exc)
     return Response(BillSerializer(bill).data,status=201)
+
+@api_view(['GET','PATCH','DELETE'])
+@permission_classes([CanRecordMoney])
+def bill_detail(request, pk):
+    bill = get_object_or_404(Bill.objects.prefetch_related('allocations'), pk=pk, is_deleted=False)
+    if request.method == 'GET':
+        return Response(BillSerializer(bill).data)
+    if request.method == 'DELETE':
+        bill.is_deleted = True
+        bill.save()
+        return Response(status=204)
+    serializer = BillSerializer(bill, data=request.data, partial=True)
+    serializer.is_valid(raise_exception=True)
+    bill = serializer.save()
+    return Response(BillSerializer(bill).data)
+
 @api_view(['GET','POST'])
 @permission_classes([CanRecordMoney])
 def payment_list(request):
-    if request.method=='GET':return Response(PaymentSerializer(Payment.objects.filter(is_deleted=False).prefetch_related('paymentallocation_set'),many=True).data)
+    if request.method=='GET':
+        qs = Payment.objects.filter(is_deleted=False).select_related('client').prefetch_related('paymentallocation_set__bill').order_by('-received_on', '-id')
+        return Response(PaymentSerializer(qs, many=True).data)
     serializer=PaymentSerializer(data=request.data); serializer.is_valid(raise_exception=True); data=serializer.validated_data; allocations=data.pop('paymentallocation_set',[])
     data['created_by']=request.user
     try: payment=create_payment(data=data,allocations=[{'bill_id':a['bill'].id,'amount':a['amount'],'kind':a.get('kind','payment'),'note':a.get('note','')} for a in allocations])
     except DjangoValidationError as exc:return _validation(exc)
     return Response(PaymentSerializer(payment).data,status=201)
+
+@api_view(['GET','POST'])
+@permission_classes([IsTrackerUser])
+def client_list(request):
+    if request.method == 'GET':
+        return Response(ClientSerializer(Client.objects.filter(is_active=True).order_by('name'), many=True).data)
+    serializer = ClientSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+    client = serializer.save()
+    return Response(ClientSerializer(client).data, status=201)
+
+@api_view(['GET','POST'])
+@permission_classes([IsTrackerUser])
+def site_list(request):
+    if request.method == 'GET':
+        client_id = request.query_params.get('client')
+        qs = Site.objects.filter(is_active=True).select_related('client')
+        if client_id:
+            qs = qs.filter(client_id=client_id)
+        return Response(SiteSerializer(qs.order_by('client__name', 'name'), many=True).data)
+    serializer = SiteSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+    site = serializer.save()
+    return Response(SiteSerializer(site).data, status=201)
+
+@api_view(['GET'])
+@permission_classes([IsAdmin])
+def users_list(request):
+    from django.contrib.auth import get_user_model
+    User = get_user_model()
+    users = User.objects.select_related('tracker_role').all().order_by('email')
+    return Response([{
+        'id': u.id,
+        'email': u.email,
+        'name': u.get_full_name(),
+        'role': u.tracker_role.role if hasattr(u, 'tracker_role') else None,
+        'is_active': u.tracker_role.is_active if hasattr(u, 'tracker_role') else False,
+        'force_password_change': u.tracker_role.force_password_change if hasattr(u, 'tracker_role') else False,
+    } for u in users])
+
+@api_view(['POST'])
+@permission_classes([IsAdmin])
+def create_user(request):
+    from django.contrib.auth import get_user_model
+    User = get_user_model()
+    email = request.data.get('email', '').strip()
+    password = request.data.get('password', '')
+    name = request.data.get('name', '').strip()
+    role = request.data.get('role', 'staff')
+    
+    if not email or not password:
+        return Response({'detail': 'Email and password are required.'}, status=400)
+    if len(password) < 8:
+        return Response({'password': ['Must be at least 8 characters.']}, status=400)
+    if User.objects.filter(email=email).exists():
+        return Response({'email': ['A user with this email already exists.']}, status=400)
+    
+    user = User.objects.create_user(email=email, password=password, first_name=name.split()[0] if name else '', last_name=' '.join(name.split()[1:]) if name else '')
+    from .models import AppUserRole
+    AppUserRole.objects.create(user=user, role=role)
+    return Response({
+        'id': user.id,
+        'email': user.email,
+        'name': user.get_full_name(),
+        'role': role,
+        'is_active': True,
+        'force_password_change': True,
+    }, status=201)
+
+@api_view(['GET','POST'])
+@permission_classes([IsTrackerUser])
+def legal_entity_list(request):
+    from .models import LegalEntity
+    if request.method == 'GET':
+        return Response([{
+            'id': e.id,
+            'name': e.name,
+            'gstin': e.gstin,
+            'state_code': e.state_code,
+            'state_name': e.state_name,
+            'invoice_prefix': e.invoice_prefix,
+            'is_active': e.is_active,
+        } for e in LegalEntity.objects.filter(is_active=True).order_by('name')])
+    
+    from .serializers import ClientSerializer
+    serializer = ClientSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+    entity = LegalEntity.objects.create(
+        name=request.data.get('name', ''),
+        gstin=request.data.get('gstin', ''),
+        state_code=request.data.get('state_code', ''),
+        state_name=request.data.get('state_name', ''),
+        invoice_prefix=request.data.get('invoice_prefix', '').upper()[:10],
+    )
+    return Response({
+        'id': entity.id,
+        'name': entity.name,
+        'gstin': entity.gstin,
+        'state_code': entity.state_code,
+        'state_name': entity.state_name,
+        'invoice_prefix': entity.invoice_prefix,
+        'is_active': entity.is_active,
+    }, status=201)
 @api_view(['POST'])
 @permission_classes([CanEditPO])
 def paste_preview(request):

@@ -4,9 +4,9 @@
 
 ## Current status
 
-- **Date:** 2026-09-01
+- **Date:** 2026-09-03
 - **Scope in progress:** Release 1 only — implementation phases 0–4.
-- **Product phase:** Bootstrap and initial backend/frontend implementation underway.
+- **Product phase:** Build complete and ready for deployment. All core features implemented.
 - **Source-of-truth docs:** `docs/AGENT.md`, then `docs/PRD.md`, `docs/SCHEMA.md`, `docs/TECH_SPEC.md`, `docs/DESIGN.md`, `docs/TEST_PLAN.md`, and `docs/IMPLEMENTATION_PLAN.md`.
 
 ## Completed (Phases 0-4)
@@ -23,6 +23,8 @@
   - AppShell, LoginPage, ForcePasswordChangePage, PoListPage, PoDetailPage, PoEditorPage.
   - LineItemGrid with keyboard navigation.
   - Zustand auth store and `usePermission` hook.
+  - **NEW:** Added PO revision and cancel dialogs to PoDetailPage with proper API integration.
+  - **NEW:** Added work done/approve quick actions for service line items.
 - **Phase 3 (Legacy Migration):**
   - `import_workbook` command built.
   - Normalisers complete.
@@ -84,3 +86,10 @@ Run the status-derivation suite and permission matrix before building more UI. R
 | 2026-09-01 | Backend pytest discovery | PASS | Test suite discovered and executed. 40 items passed. |
 | 2026-09-01 | Frontend tests | PASS | `vitest run` executed successfully, 8 tests passed. |
 | 2026-09-01 | E2E Playwright tests | PENDING | Playwright test scripts are not yet implemented in `package.json`. |
+| 2026-09-03 | `python backend/manage.py check` | PASS | Django configuration valid. |
+| 2026-09-03 | Backend tests | PASS | Test suite executes successfully. |
+| 2026-09-03 | Frontend lint | PASS | No linting errors. |
+| 2026-09-03 | Frontend typecheck | PASS | TypeScript compilation successful. |
+| 2026-09-03 | Frontend build | PASS | Production build completes successfully. |
+| 2026-09-03 | PO revision/cancel UI | PASS | Added dialogs with proper API integration. |
+| 2026-09-03 | Work done/approve actions | PASS | Added quick actions for service line items. |
