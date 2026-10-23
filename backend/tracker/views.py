@@ -1,5 +1,6 @@
 import csv, io
 from datetime import date
+from decimal import Decimal
 from django.contrib.auth import authenticate, login, logout, get_user_model
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import IntegrityError, transaction
@@ -15,6 +16,7 @@ from django.views.decorators.csrf import csrf_exempt
 from .permissions import IsTrackerUser,CanEditPO,CanShortClose,CanRecordMoney,IsAdmin,get_role
 from .serializers import POSerializer,SimplePOSerializer,LineSerializer,ChallanSerializer,BillSerializer,PaymentSerializer,ClientSerializer
 from .services import create_po,revise_po,short_close_line,create_challan,create_bill,create_payment,allocate_bill,validate_bill_number
+from .money import to_money
 from .selectors import search, line_status, po_totals, pending_lines, dashboard_snapshot
 
 def _validation(exc): return Response(getattr(exc,'message_dict',{'detail':exc.messages if hasattr(exc,'messages') else str(exc)}),status=400)
@@ -99,27 +101,58 @@ def po_activity(request,pk):
         if state not in {choice for choice,_ in Bill.Ariba.choices}: return Response({'ariba_state':['Choose a valid Ariba state.']},status=400)
         bill.ariba_state=state; bill.ariba_uploaded_on=entry_date if state in ('uploaded','resubmitted') else None; bill.ariba_reference=request.data.get('reference',''); bill.ariba_rejection_note=request.data.get('note',''); bill.save(update_fields=['ariba_state','ariba_uploaded_on','ariba_reference','ariba_rejection_note','updated_at'])
         return Response({'id':bill.id,'kind':'ariba','ariba_state':bill.ariba_state},status=201)
-    line=get_object_or_404(POLineItem,pk=request.data.get('line_item_id'),po=po,is_deleted=False)
+    items = request.data.get('items')
+    if not items:
+        # Fallback for single item (legacy)
+        line_item_id = request.data.get('line_item_id')
+        if not line_item_id:
+            return Response({'items':['Select at least one item.']}, status=400)
+        items = [{
+            'line_item_id': line_item_id,
+            'qty': request.data.get('qty'),
+            'rate': request.data.get('rate'),
+            'gst_rate': request.data.get('gst_rate')
+        }]
+    
+    # Validate all items
+    lines = []
+    for item in items:
+        line = get_object_or_404(POLineItem, pk=item.get('line_item_id'), po=po, is_deleted=False)
+        lines.append({'line': line, **item})
+
     if kind=='delivery':
         if not number:return Response({'number':['Challan number is required.']},status=400)
-        try: challan=create_challan(data={'challan_number':number,'challan_date':entry_date,'site':po.site,'created_by':request.user},allocations=[{'line_item_id':line.id,'qty':request.data.get('qty')}])
+        allocations = [{'line_item_id': item['line'].id, 'qty': item['qty']} for item in lines]
+        try: challan=create_challan(data={'challan_number':number,'challan_date':entry_date,'site':po.site,'created_by':request.user},allocations=allocations)
         except DjangoValidationError as exc:return _validation(exc)
         return Response({'id':challan.id,'kind':'delivery'},status=201)
+    
     if kind=='bill':
         if not number:return Response({'number':['Bill number is required.']},status=400)
         entity,_=LegalEntity.objects.get_or_create(invoice_prefix=number.split('/')[0].upper()[:10] or 'UP',defaults={'name':'Default billing entity'})
         needs_review=False
         try: validate_bill_number(number)
         except DjangoValidationError: needs_review=True
-        allocation={'line_item_id':line.id,'qty':request.data.get('qty'),'rate':request.data.get('rate') or line.rate,'gst_rate':request.data.get('gst_rate') or line.gst_rate}
+        
+        allocations = []
+        for item in lines:
+            line = item['line']
+            allocations.append({
+                'line_item_id': line.id,
+                'qty': item.get('qty'),
+                'rate': item.get('rate') or line.rate,
+                'gst_rate': item.get('gst_rate') or line.gst_rate
+            })
+            
         try:
             bill=Bill.objects.filter(legal_entity=entity,bill_number=number,is_deleted=False).first()
             if bill:
-                if bill.allocations.filter(line_item=line).exists():
-                    return Response({'number':['This bill is already allocated to this item. Edit the existing record instead.']},status=400)
-                allocate_bill(bill=bill,allocations=[allocation])
+                # Add allocations that don't exist yet
+                new_allocations = [a for a in allocations if not bill.allocations.filter(line_item_id=a['line_item_id']).exists()]
+                if new_allocations:
+                    allocate_bill(bill=bill,allocations=new_allocations)
             else:
-                bill=create_bill(data={'legal_entity':entity,'bill_number':number,'bill_date':entry_date,'created_by':request.user,'ariba_state':request.data.get('ariba_state','pending'),'needs_review':needs_review},allocations=[allocation],validate_number=False)
+                bill=create_bill(data={'legal_entity':entity,'bill_number':number,'bill_date':entry_date,'created_by':request.user,'ariba_state':request.data.get('ariba_state','pending'),'needs_review':needs_review},allocations=allocations,validate_number=False)
         except DjangoValidationError as exc:return _validation(exc)
         return Response({'id':bill.id,'kind':'bill'},status=201)
     return Response({'kind':['Choose delivery, bill or payment.']},status=400)
@@ -179,7 +212,8 @@ def po_export(request):
         totals=po_totals(po)
         for line in po.lines.filter(is_deleted=False):
             derived=line_status(line)
-            sheet.append([po.po_number,po.po_date,po.lifecycle_stage,po.client.name,po.site.name if po.site else '',line.line_no,line.description,line.item_type,line.qty_ordered,line.rate,line.amount,line.gst_rate,derived['qty_delivered'],derived['qty_billed'],derived['status'],'',totals['amount_paid'],totals['outstanding_amount']])
+            billed=sum((allocation.amount for allocation in line.bill_allocations.all()),Decimal('0'))
+            sheet.append([po.po_number,po.po_date,po.lifecycle_stage,po.client.name,po.site.name if po.site else '',line.line_no,line.description,line.item_type,line.qty_ordered,line.rate,line.amount,line.gst_rate,derived['qty_delivered'],derived['qty_billed'],derived['status'],to_money(billed),totals['amount_paid'],totals['outstanding_amount']])
     sheet.freeze_panes='A2'; sheet.auto_filter.ref=sheet.dimensions
     for col in sheet.columns:
         sheet.column_dimensions[col[0].column_letter].width=min(max(max(len(str(cell.value or '')) for cell in col)+2, 12), 40)

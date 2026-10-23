@@ -15,7 +15,13 @@ def normalize_date(value):
     if isinstance(value, date):
         return value, None
     text = str(value).strip()
-    for fmt in ("%d/%m/%Y", "%d.%m.%Y", "%Y-%m-%d"):
+    # Four-digit years are tried first so an unambiguous date is never reread as
+    # a two-digit one. The %y forms matter because the workbook's challan column
+    # is overwhelmingly DD.MM.YY ("059/06.08.24"); without them those deliveries
+    # were all rejected as impossible dates. A 1- or 3-digit year still falls
+    # through to IMPOSSIBLE_DATE below.
+    for fmt in ("%d/%m/%Y", "%d.%m.%Y", "%Y-%m-%d", "%d-%m-%Y", "%d-%b-%Y",
+                "%d/%m/%y", "%d.%m.%y", "%d-%m-%y"):
         try:
             return datetime.strptime(text, fmt).date(), None
         except ValueError:

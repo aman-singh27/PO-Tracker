@@ -6,39 +6,37 @@ import { activityApi, attachmentApi, poApi } from "../api/client"
 import type { LifecycleStage, LineItem, PurchaseOrder } from "../api/types"
 import { Button, Card } from "../components/ui"
 import { LineItemGrid } from "../components/LineItemGrid"
-import { StatusBadge } from "../components/StatusBadge"
 import { formatMoney } from "../lib/money"
 
 const STAGES: Record<LifecycleStage, string> = {
   draft: "Draft",
   ordered: "Ordered",
   partially_built: "Partially built",
+  partially_billed: "Partially billed",
   partially_paid: "Partially paid",
   closed: "Closed",
+  on_hold: "On hold",
+  cancelled: "Cancelled",
 }
 
 type Bill = { id: number; bill_number: string; total_amount: string; ariba_state: string }
 type Attachment = { id: number; label: string; file: string }
 type ActivityForm = {
   kind: string
-  line_item_id: string
+  items: { line_item_id: number; qty: string; rate: string; gst_rate: string }[]
   bill_id: string
   number: string
   date: string
-  qty: string
-  rate: string
   amount: string
   ariba_state: string
 }
 
 const defaultActivity = (): ActivityForm => ({
   kind: "delivery",
-  line_item_id: "",
+  items: [],
   bill_id: "",
   number: "",
   date: new Date().toISOString().slice(0, 10),
-  qty: "",
-  rate: "",
   amount: "",
   ariba_state: "uploaded",
 })
@@ -59,6 +57,7 @@ export function PoDetailPage() {
   const [showCancelDialog, setShowCancelDialog] = useState(false)
   const [revisionReason, setRevisionReason] = useState("")
   const [cancelReason, setCancelReason] = useState("")
+  const [isEditingItems, setIsEditingItems] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -146,7 +145,7 @@ export function PoDetailPage() {
     if (!po) return
     const isBillAction = ["payment", "ariba"].includes(activity.kind)
     if (isBillAction && !activity.bill_id) return
-    if (!isBillAction && (!activity.line_item_id || !activity.number || !activity.qty)) return
+    if (!isBillAction && (activity.items.length === 0 || !activity.number || activity.items.some(i => !i.qty))) return
     if (activity.kind === "payment" && !activity.amount) return
     setRecording(true)
     setError("")
@@ -160,7 +159,7 @@ export function PoDetailPage() {
         ariba: "Ariba status updated",
       }
       toast.success(messages[activity.kind] ?? "Activity recorded")
-      setActivity(cur => ({ ...cur, number: "", qty: "", amount: "", rate: "" }))
+      setActivity(cur => ({ ...cur, number: "", amount: "", items: [] }))
     } catch (err: unknown) {
       const e = err as { response?: { data?: Record<string, string[]> } }
       setError(
@@ -179,7 +178,7 @@ export function PoDetailPage() {
     setError("")
     try {
       const result = await poApi.revise(po.id, {
-        lines: po.lines.map(line => ({
+        lines: (po.lines ?? []).map(line => ({
           ...line,
           carries_from_line_id: line.id,
         })),
@@ -227,7 +226,7 @@ export function PoDetailPage() {
   const isBillAction = ["payment", "ariba"].includes(activity.kind)
   const recordDisabled =
     recording ||
-    (isBillAction ? !activity.bill_id : !activity.line_item_id || !activity.number || !activity.qty) ||
+    (isBillAction ? !activity.bill_id : activity.items.length === 0 || !activity.number || activity.items.some(i => !i.qty)) ||
     (activity.kind === "payment" && !activity.amount)
 
   if (error && !po) {
@@ -318,15 +317,31 @@ export function PoDetailPage() {
           </div>
         </div>
         <div className="activity-grid">
-          <label>
-            Action
-            <select value={activity.kind} onChange={e => setActivity({ ...activity, kind: e.target.value })}>
-              <option value="delivery">Delivery challan</option>
-              <option value="bill">Bill</option>
-              <option value="payment">Payment received</option>
-              <option value="ariba">Ariba status</option>
-            </select>
-          </label>
+          <div style={{ gridColumn: "1 / -1", display: "flex", gap: "0.5rem", marginBottom: "1rem" }}>
+            {[
+              { id: "delivery", label: "Delivery challan" },
+              { id: "bill", label: "Bill" },
+              { id: "payment", label: "Payment received" },
+              { id: "ariba", label: "Ariba status" }
+            ].map(tab => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setActivity({ ...activity, kind: tab.id, items: [] })}
+                style={{
+                  padding: "0.5rem 1rem",
+                  borderRadius: "4px",
+                  border: activity.kind === tab.id ? "1px solid var(--accent)" : "1px solid var(--border)",
+                  background: activity.kind === tab.id ? "var(--accent-muted)" : "var(--surface)",
+                  color: activity.kind === tab.id ? "var(--accent)" : "inherit",
+                  fontWeight: activity.kind === tab.id ? 600 : 400,
+                  cursor: "pointer"
+                }}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
 
           {isBillAction ? (
             <label>
@@ -339,21 +354,10 @@ export function PoDetailPage() {
               </select>
             </label>
           ) : (
-            <>
-              <label>
-                Item
-                <select value={activity.line_item_id} onChange={e => setActivity({ ...activity, line_item_id: e.target.value })}>
-                  <option value="">Choose item</option>
-                  {lines.map(line => (
-                    <option key={line.id} value={line.id}>{line.description}</option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                {activity.kind === "delivery" ? "Challan number" : "Bill number"}
-                <input value={activity.number} onChange={e => setActivity({ ...activity, number: e.target.value })} />
-              </label>
-            </>
+            <label>
+              {activity.kind === "delivery" ? "Challan number" : "Bill number"}
+              <input value={activity.number} onChange={e => setActivity({ ...activity, number: e.target.value })} />
+            </label>
           )}
 
           <label>
@@ -380,23 +384,48 @@ export function PoDetailPage() {
               </select>
             </label>
           )}
-
-          {!isBillAction && (
-            <>
-              <label>
-                Quantity
-                <input inputMode="decimal" value={activity.qty} onChange={e => setActivity({ ...activity, qty: e.target.value })} />
-              </label>
-              {activity.kind === "bill" && (
-                <label>
-                  Rate
-                  <input inputMode="decimal" value={activity.rate} onChange={e => setActivity({ ...activity, rate: e.target.value })} />
-                </label>
-              )}
-            </>
-          )}
         </div>
-        <div className="form-actions">
+        {!isBillAction && (
+          <div style={{ marginTop: '1.5rem', borderTop: '1px solid var(--border)', paddingTop: '1rem' }}>
+            <p style={{ fontWeight: 600, marginBottom: '0.75rem' }}>Select items to include in {activity.kind === 'delivery' ? 'challan' : 'bill'}</p>
+            {lines.map(line => {
+              const selected = activity.items.find(i => i.line_item_id === line.id)
+              const isChecked = !!selected
+              return (
+                <div key={line.id} style={{ display: 'flex', gap: '1rem', alignItems: 'center', marginBottom: '0.5rem', background: 'var(--surface-sunken)', padding: '0.5rem 1rem', borderRadius: '4px' }}>
+                  <input 
+                    type="checkbox" 
+                    checked={isChecked}
+                    onChange={e => {
+                      if (e.target.checked) {
+                        const rem = parseFloat(line.qty_ordered) - parseFloat(activity.kind === 'bill' ? (line.derived_status?.qty_billed || '0') : (line.derived_status?.qty_delivered || '0'))
+                        setActivity({ ...activity, items: [...activity.items, { line_item_id: line.id!, qty: String(Math.max(0, rem)), rate: line.rate, gst_rate: line.gst_rate }] })
+                      } else {
+                        setActivity({ ...activity, items: activity.items.filter(i => i.line_item_id !== line.id) })
+                      }
+                    }}
+                  />
+                  <span style={{ flex: 1, fontWeight: 500 }}>{line.description}</span>
+                  {isChecked && (
+                    <>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', margin: 0, fontSize: '0.85rem' }}>
+                        Qty
+                        <input style={{ width: '80px', padding: '0.25rem' }} inputMode="decimal" value={selected.qty} onChange={e => setActivity({ ...activity, items: activity.items.map(i => i.line_item_id === line.id ? { ...i, qty: e.target.value } : i) })} />
+                      </label>
+                      {activity.kind === "bill" && (
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', margin: 0, fontSize: '0.85rem' }}>
+                          Rate
+                          <input style={{ width: '80px', padding: '0.25rem' }} inputMode="decimal" value={selected.rate} onChange={e => setActivity({ ...activity, items: activity.items.map(i => i.line_item_id === line.id ? { ...i, rate: e.target.value } : i) })} />
+                        </label>
+                      )}
+                    </>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        )}
+        <div className="form-actions" style={{ marginTop: '1.5rem' }}>
           <Button onClick={record} disabled={recordDisabled}>
             {recording ? "Recording…" : "Record activity"}
           </Button>
@@ -432,63 +461,73 @@ export function PoDetailPage() {
       </Card>
 
       <Card className="form-card">
-        <div className="section-heading">
+        <div className="section-heading" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
             <h2>Items</h2>
-            <p>Update quantities, units, rates or descriptions. Item status is derived from actual delivery and billing records.</p>
+            <p>Item status is derived from actual delivery and billing records.</p>
           </div>
+          <Button variant="outline" onClick={() => setIsEditingItems(!isEditingItems)}>
+            {isEditingItems ? "Done editing" : "Edit items"}
+          </Button>
         </div>
-        <LineItemGrid value={lines} onChange={updateLines} />
-        {lines.length > 0 && (
-          <div className="line-status-list">
-            {lines.map(line => (
-              <span key={line.id ?? line.line_no}>
-                <StatusBadge status={line.derived_status?.status || line.interim_status || "ORDERED"} />
-                {line.description}
-                {line.item_type === 'service' && line.id && (
-                  <div style={{ display: 'flex', gap: '0.25rem', marginLeft: '0.5rem' }}>
-                    {!line.work_done_on && (
-                      <button
-                        type="button"
-                        className="quick-action"
-                        onClick={async () => {
-                          try {
-                            await poApi.markWorkDone(line.id)
-                            await refresh()
-                            toast.success("Work marked as done")
-                          } catch {
-                            setError("Could not mark work as done")
-                          }
-                        }}
-                        title="Mark work done"
-                      >
-                        Work done
-                      </button>
-                    )}
-                    {line.work_done_on && !line.client_approved_on && (
-                      <button
-                        type="button"
-                        className="quick-action"
-                        onClick={async () => {
-                          try {
-                            await poApi.markApproved(line.id)
-                            await refresh()
-                            toast.success("Work marked as approved")
-                          } catch {
-                            setError("Could not mark work as approved")
-                          }
-                        }}
-                        title="Mark client approved"
-                      >
-                        Approve
-                      </button>
-                    )}
-                  </div>
-                )}
-              </span>
-            ))}
-          </div>
-        )}
+        <LineItemGrid 
+          value={lines} 
+          onChange={updateLines} 
+          readOnly={!isEditingItems}
+          renderStatus={(line) => (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              {line.item_type === 'material' ? (
+                <span style={{ fontSize: '0.85rem', fontWeight: 500, color: 'var(--subtle)' }}>
+                  {line.derived_status?.qty_billed || '0'} / {line.qty_ordered} Billed
+                </span>
+              ) : (
+                <span style={{ fontSize: '0.85rem', fontWeight: 500, color: 'var(--subtle)' }}>
+                  {line.work_done_on ? 'Work Done' : 'Pending'}
+                </span>
+              )}
+              {line.item_type === 'service' && line.id && (
+                <div style={{ display: 'flex', gap: '0.25rem', marginLeft: '0.5rem' }}>
+                  {!line.work_done_on && (
+                    <button
+                      type="button"
+                      className="button"
+                      style={{ padding: '0.2rem 0.5rem', fontSize: '0.75rem', background: 'var(--surface-sunken)', border: '1px solid var(--border)', borderRadius: '4px', cursor: 'pointer' }}
+                      onClick={async () => {
+                        try {
+                          await poApi.markWorkDone(line.id!)
+                          await refresh()
+                          toast.success("Work marked as done")
+                        } catch {
+                          setError("Could not mark work as done")
+                        }
+                      }}
+                    >
+                      Log Work
+                    </button>
+                  )}
+                  {line.work_done_on && !line.client_approved_on && (
+                    <button
+                      type="button"
+                      className="button"
+                      style={{ padding: '0.2rem 0.5rem', fontSize: '0.75rem', background: 'var(--surface-sunken)', border: '1px solid var(--border)', borderRadius: '4px', cursor: 'pointer' }}
+                      onClick={async () => {
+                        try {
+                          await poApi.markApproved(line.id!)
+                          await refresh()
+                          toast.success("Work marked as approved")
+                        } catch {
+                          setError("Could not mark work as approved")
+                        }
+                      }}
+                    >
+                      Approve
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        />
       </Card>
 
       {showRevisionDialog && (

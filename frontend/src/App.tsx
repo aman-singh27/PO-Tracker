@@ -1,4 +1,5 @@
-﻿import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom"
+import { useEffect, useState } from "react"
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router-dom"
 import { Toaster } from "sonner"
 import { AppShell } from "./components/AppShell"
 import { LoginPage } from "./pages/LoginPage"
@@ -16,15 +17,32 @@ import { ReviewPage } from "./pages/ReviewPage"
 import { SitesPage } from "./pages/SitesPage"
 import { UsersPage } from "./pages/UsersPage"
 import { useAuthStore } from "./stores/auth"
+import { authApi } from "./api/client"
 
 function Protected({ children }: { children: React.ReactNode }) {
   const user = useAuthStore(s => s.user)
-  if (!user) return <Navigate to="/login" replace />
+  const location = useLocation()
+  if (!user) return <Navigate to="/login" replace state={{ from: location.pathname + location.search }} />
   if (user.force_password_change) return <Navigate to="/change-password" replace />
   return <AppShell>{children}</AppShell>
 }
 
 export default function App() {
+  const [loading, setLoading] = useState(true)
+  const setUser = useAuthStore(s => s.setUser)
+
+  useEffect(() => {
+    authApi.me()
+      .then(res => {
+        const { user: u, role, force_password_change } = res.data
+        setUser({ ...u, role, force_password_change })
+      })
+      .catch(() => setUser(null))
+      .finally(() => setLoading(false))
+  }, [setUser])
+
+  if (loading) return null
+
   return (
     <BrowserRouter>
       <Routes>

@@ -13,7 +13,9 @@ WSGI_APPLICATION = 'config.wsgi.application'
 if os.getenv('POSTGRES_DB'):
     DATABASES = {'default': {'ENGINE':'django.db.backends.postgresql','NAME':os.environ['POSTGRES_DB'],'USER':os.getenv('POSTGRES_USER','postgres'),'PASSWORD':os.getenv('POSTGRES_PASSWORD',''),'HOST':os.getenv('POSTGRES_HOST','localhost'),'PORT':os.getenv('POSTGRES_PORT','5432')}}
 else:
-    DATABASES = {'default': {'ENGINE':'django.db.backends.sqlite3','NAME': BASE_DIR / 'db.sqlite3'}}
+    # SQLITE_NAME lets a throwaway database be pointed at for import rehearsals
+    # and reconciliation runs without disturbing the working dev database.
+    DATABASES = {'default': {'ENGINE':'django.db.backends.sqlite3','NAME': os.getenv('SQLITE_NAME') or (BASE_DIR / 'db.sqlite3')}}
 AUTH_PASSWORD_VALIDATORS = []
 LANGUAGE_CODE='en-us'; TIME_ZONE='Asia/Kolkata'; USE_I18N=True; USE_TZ=True
 STATIC_URL='static/'

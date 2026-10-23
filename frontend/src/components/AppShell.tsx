@@ -1,4 +1,4 @@
-﻿import {
+import {
   ClipboardCheck,
   FileSpreadsheet,
   FileText,
@@ -22,8 +22,6 @@ const nav = [
   ["/challans", "Challans", Truck],
   ["/bills", "Bills & Ariba", FileText],
   ["/payments", "Payments", IndianRupee],
-  ["/sites", "Sites", Upload],
-  ["/users", "Users", Upload],
   ["/po/import", "Import", Upload],
   ["/review", "Review queue", ClipboardCheck],
   ["/settings", "Alert settings", SlidersHorizontal],

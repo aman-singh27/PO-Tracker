@@ -1,8 +1,15 @@
-﻿import { useRef, useEffect } from "react"
+import { useRef, useEffect } from "react"
 import type { LineItem } from "../api/types"
 import { guessItemType, parsePasteBlock } from "../lib/po"
 
-type Props = { value: LineItem[]; onChange: (lines: LineItem[]) => void; gstRate?: string }
+type Props = { 
+  value: LineItem[]; 
+  onChange: (lines: LineItem[]) => void; 
+  gstRate?: string;
+  readOnly?: boolean;
+  renderStatus?: (line: LineItem) => React.ReactNode;
+}
+
 const blank = (line_no: number, gst_rate = "0"): LineItem => ({
   line_no, description: "", item_type: "material", qty_ordered: "", unit: "", rate: "", gst_rate,
 })
@@ -12,15 +19,11 @@ const lineAmount = (qty: string, rate: string): string => {
   return (q * r).toFixed(2)
 }
 
-export function LineItemGrid({ value, onChange, gstRate = "0" }: Props) {
+export function LineItemGrid({ value, onChange, gstRate = "0", readOnly, renderStatus }: Props) {
   const inputs = useRef<Array<HTMLInputElement | HTMLSelectElement | null>>([])
   const rows = value.length ? value : [blank(1, gstRate)]
 
-  // Seed one blank row when the grid is empty — but only once, not on every render.
-  // We intentionally omit onChange/rows from deps because including them would create
-  // an infinite loop (onChange → new value → effect fires again).
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { if (!value.length) onChange([blank(1, gstRate)]) }, [])
+  useEffect(() => { if (!value.length && !readOnly) onChange([blank(1, gstRate)]) }, [value.length, readOnly])
 
   const change = (row: number, key: keyof LineItem, text: string) => {
     const next = rows.map((line, i) =>
@@ -72,72 +75,106 @@ export function LineItemGrid({ value, onChange, gstRate = "0" }: Props) {
             <th scope="col">Unit</th>
             <th scope="col" className="num">Rate</th>
             <th scope="col" className="num">Amount</th>
+            {readOnly && renderStatus && <th scope="col">Status</th>}
           </tr>
         </thead>
         <tbody>
           {rows.map((line, row) => (
-            <tr key={row}>
+            <tr key={line.id ?? row}>
               <td>
-                <input
-                  ref={ref(row * 5)}
-                  aria-label={`Line ${row + 1} description`}
-                  value={line.description}
-                  onPaste={e => paste(e, row, 0)}
-                  onKeyDown={e => move(e, row, 0)}
-                  onChange={e => change(row, "description", e.target.value)}
-                />
+                {readOnly ? (
+                  <span style={{ padding: "0.25rem 0.5rem", display: "block" }}>{line.description}</span>
+                ) : (
+                  <input
+                    ref={ref(row * 5)}
+                    aria-label={`Line ${row + 1} description`}
+                    value={line.description}
+                    onPaste={e => paste(e, row, 0)}
+                    onKeyDown={e => move(e, row, 0)}
+                    onChange={e => change(row, "description", e.target.value)}
+                  />
+                )}
               </td>
               <td>
-                <select
-                  ref={ref(row * 5 + 1)}
-                  aria-label={`Line ${row + 1} type`}
-                  value={line.item_type}
-                  onKeyDown={e => move(e, row, 1)}
-                  onChange={e => change(row, "item_type", e.target.value)}
-                >
-                  <option value="material">Material</option>
-                  <option value="service">Service</option>
-                </select>
+                {readOnly ? (
+                  <span style={{ padding: "0.25rem 0.5rem", display: "block", textTransform: "capitalize" }}>{line.item_type}</span>
+                ) : (
+                  <select
+                    ref={ref(row * 5 + 1)}
+                    aria-label={`Line ${row + 1} type`}
+                    value={line.item_type}
+                    onKeyDown={e => move(e, row, 1)}
+                    onChange={e => change(row, "item_type", e.target.value)}
+                  >
+                    <option value="material">Material</option>
+                    <option value="service">Service</option>
+                  </select>
+                )}
+              </td>
+              <td className={readOnly ? "num" : ""}>
+                {readOnly ? (
+                  <span style={{ padding: "0.25rem 0.5rem", display: "block" }}>{line.qty_ordered}</span>
+                ) : (
+                  <input
+                    ref={ref(row * 5 + 2)}
+                    inputMode="decimal"
+                    className="num"
+                    aria-label={`Line ${row + 1} quantity`}
+                    value={line.qty_ordered}
+                    onKeyDown={e => move(e, row, 2)}
+                    onChange={e => change(row, "qty_ordered", e.target.value)}
+                  />
+                )}
               </td>
               <td>
-                <input
-                  ref={ref(row * 5 + 2)}
-                  inputMode="decimal"
-                  className="num"
-                  aria-label={`Line ${row + 1} quantity`}
-                  value={line.qty_ordered}
-                  onKeyDown={e => move(e, row, 2)}
-                  onChange={e => change(row, "qty_ordered", e.target.value)}
-                />
+                {readOnly ? (
+                  <span style={{ padding: "0.25rem 0.5rem", display: "block" }}>{line.unit}</span>
+                ) : (
+                  <input
+                    ref={ref(row * 5 + 3)}
+                    aria-label={`Line ${row + 1} unit`}
+                    value={line.unit}
+                    onKeyDown={e => move(e, row, 3)}
+                    onChange={e => change(row, "unit", e.target.value)}
+                  />
+                )}
               </td>
-              <td>
-                <input
-                  ref={ref(row * 5 + 3)}
-                  aria-label={`Line ${row + 1} unit`}
-                  value={line.unit}
-                  onKeyDown={e => move(e, row, 3)}
-                  onChange={e => change(row, "unit", e.target.value)}
-                />
+              <td className={readOnly ? "num" : ""}>
+                {readOnly ? (
+                  <span style={{ padding: "0.25rem 0.5rem", display: "block" }}>{line.rate}</span>
+                ) : (
+                  <input
+                    ref={ref(row * 5 + 4)}
+                    inputMode="decimal"
+                    className="num"
+                    aria-label={`Line ${row + 1} rate`}
+                    value={line.rate}
+                    onKeyDown={e => move(e, row, 4)}
+                    onChange={e => change(row, "rate", e.target.value)}
+                  />
+                )}
               </td>
-              <td>
-                <input
-                  ref={ref(row * 5 + 4)}
-                  inputMode="decimal"
-                  className="num"
-                  aria-label={`Line ${row + 1} rate`}
-                  value={line.rate}
-                  onKeyDown={e => move(e, row, 4)}
-                  onChange={e => change(row, "rate", e.target.value)}
-                />
-              </td>
-              <td className="num">{lineAmount(line.qty_ordered, line.rate)}</td>
+              <td className="num"><span style={{ padding: readOnly ? "0.25rem 0.5rem" : "0", display: "block" }}>{lineAmount(line.qty_ordered, line.rate)}</span></td>
+              {readOnly && renderStatus && <td>{renderStatus(line)}</td>}
             </tr>
           ))}
         </tbody>
       </table>
-      <p className="helper">
-        Tab moves between cells · Enter on the last cell adds a row · Ctrl+D copies from above · Paste rows from Excel into a description cell.
-      </p>
+      {!readOnly && (
+        <div style={{ marginTop: "1rem", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <button
+            type="button"
+            className="button"
+            style={{ background: "var(--surface-sunken)", border: "1px solid var(--border)", padding: "0.5rem 1rem", borderRadius: "4px", cursor: "pointer", fontWeight: 500 }}
+            onClick={() => onChange([...rows, blank(rows.length + 1, gstRate)])}
+          >
+            + Add row
+          </button>
+          <p className="helper" style={{ margin: 0 }}>
+            Tab moves between cells · Enter on the last cell adds a row · Ctrl+D copies from above · Paste rows from Excel into a description cell.
+          </p>
+        </div>
+      )}
     </div>
   )
 }

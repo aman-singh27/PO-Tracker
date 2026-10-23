@@ -19,5 +19,16 @@ export default defineConfig({
       },
     },
   },
-  test: { environment: "jsdom", setupFiles: ["./src/test/setup.ts"], pool: "forks", maxWorkers: 1 },
+  test: {
+    // jsdom costs ~30s to boot on Windows here, which overruns the pool's
+    // worker-startup timeout once several files queue behind it. Only the
+    // component test needs a DOM, so it opts in via a @vitest-environment
+    // docblock and the pure-logic suites stay on the node environment.
+    environment: "node",
+    setupFiles: ["./src/test/setup.ts"],
+    pool: "forks",
+    maxWorkers: 1,
+    testTimeout: 30000,
+    hookTimeout: 60000,
+  },
 })

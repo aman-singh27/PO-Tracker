@@ -1,4 +1,4 @@
-﻿import axios from "axios"
+import axios from "axios"
 import type {
   Bill,
   Challan,
@@ -10,7 +10,6 @@ import type {
   PendingLine,
   PurchaseOrder,
   ReviewItem,
-  User,
 } from "./types"
 
 const csrf = () =>
@@ -29,7 +28,7 @@ api.interceptors.request.use(config => {
 
 export const authApi = {
   login: (email: string, password: string) => api.post<LoginResponse>("/auth/login", { email, password }),
-  me: () => api.get<User>("/auth/me"),
+  me: () => api.get<LoginResponse>("/auth/me"),
   logout: () => api.post("/auth/logout"),
 }
 

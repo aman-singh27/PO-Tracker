@@ -2,6 +2,7 @@ from datetime import date
 from decimal import Decimal
 from django.db.models import Q, Sum
 from .models import PurchaseOrder,POLineItem, Bill, PaymentAllocation, TrackerSettings
+from .money import money_str, to_money
 def line_status(line):
     delivered=line.challan_allocations.aggregate(s=Sum('qty'))['s'] or Decimal('0')
     billed=line.bill_allocations.aggregate(s=Sum('qty'))['s'] or Decimal('0')
@@ -25,7 +26,7 @@ def po_totals(po):
     ordered=sum((line.amount for line in lines), Decimal('0'))
     billed=sum((allocation.total_amount for line in lines for allocation in line.bill_allocations.all()), Decimal('0'))
     paid=sum((allocation.amount for allocation in PaymentAllocation.objects.filter(bill__allocations__line_item__po=po, kind__in=['payment','tds','discount','write_off']).distinct()), Decimal('0'))
-    return {'amount_ordered':ordered,'amount_billed':billed,'amount_paid':paid,'outstanding_amount':billed-paid}
+    return {'amount_ordered':to_money(ordered),'amount_billed':to_money(billed),'amount_paid':to_money(paid),'outstanding_amount':to_money(billed-paid)}
 
 def pending_lines():
     return [line for line in POLineItem.objects.select_related('po','po__client','po__site').filter(is_deleted=False,po__is_deleted=False,po__status='active',po__needs_review=False) if line_status(line)['status'] not in ('BILLED','CLOSED_SHORT')]
@@ -46,30 +47,38 @@ def dashboard_snapshot():
             'line_id': line.id, 'po_id': line.po_id, 'po_number': line.po.po_number,
             'client': line.po.client.name, 'site': line.po.site.name if line.po.site else '',
             'description': line.description, 'status': facts['status'],
-            'amount': str(line.amount), 'days_waiting': days_waiting,
+            'amount': money_str(line.amount), 'days_waiting': days_waiting,
         })
     bills = Bill.objects.filter(is_deleted=False, needs_review=False).select_related('legal_entity').prefetch_related('allocations__line_item__po__client')
     overdue_bills, ariba_backlog = [], []
     billed_total = Decimal('0')
     gst_total = Decimal('0')
     outstanding_total = Decimal('0')
+    overdue_total = Decimal('0')
+    # GST is owed to the government from the moment a bill is raised, whether or
+    # not the client has paid. Tracking it separately on unsettled bills shows
+    # the cash already committed against money not yet collected.
+    gst_unpaid_total = Decimal('0')
     for bill in bills:
         settled = PaymentAllocation.objects.filter(bill=bill, kind__in=['payment', 'tds', 'discount', 'write_off']).aggregate(total=Sum('amount'))['total'] or Decimal('0')
         outstanding = bill.total_amount - settled
         client = next((a.line_item.po.client for a in bill.allocations.all()), None)
-        record = {'bill_id': bill.id, 'bill_number': bill.bill_number, 'bill_date': bill.bill_date, 'client': client.name if client else '', 'total_amount': str(bill.total_amount), 'outstanding_amount': str(outstanding), 'age_days': max((today - bill.bill_date).days, 0)}
+        record = {'bill_id': bill.id, 'bill_number': bill.bill_number, 'bill_date': bill.bill_date, 'client': client.name if client else '', 'total_amount': money_str(bill.total_amount), 'outstanding_amount': money_str(outstanding), 'age_days': max((today - bill.bill_date).days, 0)}
         billed_total += bill.basic_amount
         gst_total += bill.gst_amount
         outstanding_total += outstanding
         threshold=(client.payment_terms_days if client and client.payment_terms_days is not None else (settings.overdue_after_days if settings else None))
+        if outstanding > 0:
+            gst_unpaid_total += bill.gst_amount
         if outstanding > 0 and threshold is not None and record['age_days'] > threshold:
             overdue_bills.append(record)
+            overdue_total += outstanding
         if bill.ariba_state in (Bill.Ariba.PENDING, Bill.Ariba.REJECTED):
             ariba_backlog.append({**record, 'ariba_state': bill.ariba_state, 'ariba_uploaded_on': bill.ariba_uploaded_on})
     return {
-        'metrics': {'pending_items': len(stuck_items), 'outstanding_amount': str(outstanding_total), 'overdue_bill_count': len(overdue_bills), 'ariba_backlog_count': len(ariba_backlog)},
+        'metrics': {'pending_items': len(stuck_items), 'outstanding_amount': money_str(outstanding_total), 'overdue_amount': money_str(overdue_total), 'overdue_bill_count': len(overdue_bills), 'ariba_backlog_count': len(ariba_backlog), 'gst_on_unpaid_bills': money_str(gst_unpaid_total)},
         'stuck_items': sorted(stuck_items, key=lambda row: row['days_waiting'] or -1, reverse=True),
         'overdue_bills': sorted(overdue_bills, key=lambda row: row['age_days'], reverse=True),
         'ariba_backlog': sorted(ariba_backlog, key=lambda row: row['age_days'], reverse=True),
-        'gst': {'basic_billed': str(billed_total), 'gst_billed': str(gst_total), 'gross_billed': str(billed_total + gst_total)},
+        'gst': {'basic_billed': money_str(billed_total), 'gst_billed': money_str(gst_total), 'gross_billed': money_str(billed_total + gst_total), 'gst_on_unpaid_bills': money_str(gst_unpaid_total)},
     }

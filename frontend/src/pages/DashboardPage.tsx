@@ -6,6 +6,35 @@ import { poApi } from "../api/client"
 import { Button, Card } from "../components/ui"
 import { formatMoney } from "../lib/money"
 
+// Declared at module scope: defining it inside DashboardPage created a new
+// component type on every render, which remounts the list and drops its state.
+function ActionList({ title, empty, items }: {
+  title: string
+  empty: string
+  items: Array<{ title: string; detail: string; to: string }>
+}) {
+  return (
+    <Card className="action-card">
+      <div className="table-toolbar">
+        <strong>{title}</strong>
+        <span className="subtle">{items.length}</span>
+      </div>
+      {items.length ? (
+        <ul>
+          {items.slice(0, 6).map((item, i) => (
+            <li key={`${item.title}-${i}`}>
+              <Link to={item.to}>{item.title}</Link>
+              <small>{item.detail}</small>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="empty-action">{empty}</p>
+      )}
+    </Card>
+  )
+}
+
 export function DashboardPage() {
   const [data, setData] = useState<Dashboard | null>(null)
   const [error, setError] = useState("")
@@ -14,33 +43,6 @@ export function DashboardPage() {
   useEffect(() => {
     poApi.dashboard().then(r => setData(r.data as Dashboard)).catch(() => setError("Could not load dashboard data."))
   }, [])
-
-  function ActionList({ title, empty, items }: {
-    title: string
-    empty: string
-    items: Array<{ title: string; detail: string; to: string }>
-  }) {
-    return (
-      <Card className="action-card">
-        <div className="table-toolbar">
-          <strong>{title}</strong>
-          <span className="subtle">{items.length}</span>
-        </div>
-        {items.length ? (
-          <ul>
-            {items.slice(0, 6).map((item, i) => (
-              <li key={`${item.title}-${i}`}>
-                <Link to={item.to}>{item.title}</Link>
-                <small>{item.detail}</small>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="empty-action">{empty}</p>
-        )}
-      </Card>
-    )
-  }
 
   if (error) {
     return (
@@ -78,6 +80,16 @@ export function DashboardPage() {
           <p>Outstanding</p>
           <strong className="stat-num money-outstanding">{formatMoney(data?.metrics.outstanding_amount || "0")}</strong>
           <small>{data?.metrics.overdue_bill_count ?? 0} overdue bills</small>
+        </Card>
+        <Card>
+          <p>Overdue</p>
+          <strong className="stat-num money-outstanding">{formatMoney(data?.metrics.overdue_amount || "0")}</strong>
+          <small>Past the client's payment terms</small>
+        </Card>
+        <Card>
+          <p>GST on unpaid bills</p>
+          <strong className="stat-num">{formatMoney(data?.metrics.gst_on_unpaid_bills || "0")}</strong>
+          <small>Owed to government, not yet collected</small>
         </Card>
         <Card>
           <p>Stuck work</p>
@@ -133,6 +145,7 @@ export function DashboardPage() {
             <Card><p>Basic billed</p><strong className="stat-num">{formatMoney(data.gst.basic_billed)}</strong></Card>
             <Card><p>GST billed</p><strong className="stat-num">{formatMoney(data.gst.gst_billed)}</strong></Card>
             <Card><p>Gross billed</p><strong className="stat-num">{formatMoney(data.gst.gross_billed)}</strong></Card>
+            <Card><p>GST on unpaid bills</p><strong className="stat-num">{formatMoney(data.gst.gst_on_unpaid_bills)}</strong></Card>
           </div>
         </Card>
       )}

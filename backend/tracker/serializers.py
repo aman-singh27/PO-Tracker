@@ -1,6 +1,7 @@
 from decimal import Decimal
 from rest_framework import serializers
 from .models import Client,Site,PurchaseOrder,POLineItem,Challan,ChallanAllocation,Bill,BillAllocation,Payment,PaymentAllocation,LegalEntity
+from .money import money_str
 from .selectors import line_status
 class LineSerializer(serializers.ModelSerializer):
     id=serializers.IntegerField(required=False)
@@ -20,12 +21,12 @@ class POSerializer(serializers.ModelSerializer):
         validators=[]
     def get_total_amount(self, obj):
         total = sum((line.amount or 0) for line in obj.lines.all())
-        return str(total)
+        return money_str(total)
     def get_amount_billed(self, obj):
         from django.db.models import Sum
         from tracker.models import BillAllocation
         billed = BillAllocation.objects.filter(line_item__po=obj).aggregate(total=Sum('amount'))['total'] or 0
-        return str(billed)
+        return money_str(billed)
     def validate(self, attrs):
         po_date=attrs.get('po_date')
         if po_date and isinstance(po_date,str): raise serializers.ValidationError({'po_date':'Use ISO-8601 dates.'})
@@ -60,12 +61,12 @@ class SimplePOSerializer(serializers.ModelSerializer):
     class Meta: model=PurchaseOrder; fields=('id','po_number','po_date','status','lifecycle_stage','needs_review','client','client_name','site','site_name','total_amount','amount_billed','updated_at')
     def get_total_amount(self, obj):
         total = sum((line.amount or 0) for line in obj.lines.all())
-        return str(total)
+        return money_str(total)
     def get_amount_billed(self, obj):
         from django.db.models import Sum
         from tracker.models import BillAllocation
         billed = BillAllocation.objects.filter(line_item__po=obj).aggregate(total=Sum('amount'))['total'] or 0
-        return str(billed)
+        return money_str(billed)
 class ClientSerializer(serializers.ModelSerializer):
     class Meta: model=Client; fields='__all__'
 class SiteSerializer(serializers.ModelSerializer):
@@ -104,7 +105,14 @@ class BillSerializer(serializers.ModelSerializer):
     po_numbers=serializers.SerializerMethodField()
     amount_paid=serializers.SerializerMethodField()
     outstanding_amount=serializers.SerializerMethodField()
-    class Meta: model=Bill; fields='__all__'; read_only_fields=('basic_amount','gst_amount','total_amount','is_deleted')
+    class Meta:
+        model=Bill; fields='__all__'; read_only_fields=('basic_amount','gst_amount','total_amount','is_deleted')
+        # DRF derives a UniqueTogetherValidator from the model's conditional
+        # UniqueConstraint on (legal_entity, bill_number). Its enforce_required_fields
+        # step runs before validate(), so it would reject a payload that deliberately
+        # omits legal_entity for us to derive from the bill number prefix. Uniqueness
+        # is re-checked in validate() below; the database constraint stays authoritative.
+        validators=[]
 
     def validate(self, attrs):
         if not attrs.get('legal_entity'):
@@ -112,6 +120,11 @@ class BillSerializer(serializers.ModelSerializer):
             prefix = bill_no.split('/')[0].upper()[:10] if '/' in bill_no else (bill_no[:4].upper() or 'UP')
             entity, _ = LegalEntity.objects.get_or_create(invoice_prefix=prefix, defaults={'name': f'{prefix} billing entity'})
             attrs['legal_entity'] = entity
+        entity=attrs.get('legal_entity'); number=attrs.get('bill_number')
+        if entity and number:
+            clash=Bill.objects.filter(legal_entity=entity,bill_number=number,is_deleted=False)
+            if self.instance is not None: clash=clash.exclude(pk=self.instance.pk)
+            if clash.exists(): raise serializers.ValidationError({'bill_number':f'{number} already exists for {entity.invoice_prefix}.'})
         return attrs
 
     def get_client_name(self, obj):
@@ -125,11 +138,11 @@ class BillSerializer(serializers.ModelSerializer):
         from django.db.models import Sum
         from tracker.models import PaymentAllocation
         paid = PaymentAllocation.objects.filter(bill=obj, kind__in=['payment','tds','discount','write_off']).aggregate(total=Sum('amount'))['total'] or Decimal('0')
-        return str(paid)
+        return money_str(paid)
 
     def get_outstanding_amount(self, obj):
         paid = Decimal(self.get_amount_paid(obj))
-        return str(max(obj.total_amount - paid, Decimal('0')))
+        return money_str(max(obj.total_amount - paid, Decimal('0')))
 
 class PaymentAllocationSerializer(serializers.ModelSerializer):
     bill_number = serializers.CharField(source='bill.bill_number', read_only=True)

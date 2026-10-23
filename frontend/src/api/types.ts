@@ -14,7 +14,15 @@ export interface LoginResponse {
   force_password_change?: boolean
 }
 
-export type LifecycleStage = "draft" | "ordered" | "partially_built" | "partially_paid" | "closed"
+export type LifecycleStage =
+  | "draft"
+  | "ordered"
+  | "partially_built"
+  | "partially_billed"
+  | "partially_paid"
+  | "closed"
+  | "on_hold"
+  | "cancelled"
 
 export interface LineItem {
   id?: number
@@ -101,8 +109,10 @@ export interface Dashboard {
   metrics: {
     pending_items: number
     outstanding_amount: string
+    overdue_amount: string
     overdue_bill_count: number
     ariba_backlog_count: number
+    gst_on_unpaid_bills: string
   }
   stuck_items: StuckItem[]
   overdue_bills: OverdueBill[]
@@ -111,6 +121,7 @@ export interface Dashboard {
     basic_billed: string
     gst_billed: string
     gross_billed: string
+    gst_on_unpaid_bills: string
   }
 }
 
