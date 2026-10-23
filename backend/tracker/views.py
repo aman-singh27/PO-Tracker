@@ -151,6 +151,8 @@ def po_activity(request,pk):
                 new_allocations = [a for a in allocations if not bill.allocations.filter(line_item_id=a['line_item_id']).exists()]
                 if new_allocations:
                     allocate_bill(bill=bill,allocations=new_allocations)
+                else:
+                    return Response({'number':['This bill already contains the selected line items.']},status=400)
             else:
                 bill=create_bill(data={'legal_entity':entity,'bill_number':number,'bill_date':entry_date,'created_by':request.user,'ariba_state':request.data.get('ariba_state','pending'),'needs_review':needs_review},allocations=allocations,validate_number=False)
         except DjangoValidationError as exc:return _validation(exc)

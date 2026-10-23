@@ -1,4 +1,5 @@
 """Import PO Tracker Excel with full lifecycle: POs, Lines, Bills."""
+import re
 from collections import Counter
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
@@ -11,10 +12,10 @@ from openpyxl import load_workbook
 from datetime import datetime
 
 from tracker.models import (
-    Bill, BillAllocation, Client, ImportBatch, ImportReviewItem, 
+    Bill, BillAllocation, Challan, ChallanAllocation, Client, ImportBatch, ImportReviewItem,
     LegalEntity, POLineItem, PurchaseOrder, Site,
 )
-from tracker.normalizers import classify_item_type
+from tracker.normalizers import classify_item_type, parse_challan_number
 
 
 SKIP_KEYWORDS = ("grand total", "gst @", "sub total", "total", "total amount")
@@ -103,13 +104,15 @@ class Command(BaseCommand):
                     )
 
                 # Create PO
+                if PurchaseOrder.objects.filter(client=client, po_number=po_number[:100], is_deleted=False).exists():
+                    continue
                 po = PurchaseOrder.objects.create(
                     client=client,
                     site=site,
                     po_number=po_number[:100],
                     po_date=po_date,
                     source="migration",
-                    needs_review=False,
+                    needs_review=any(line.get('review_reasons') for line in lines),
                 )
                 imported_pos += 1
 
@@ -131,6 +134,24 @@ class Command(BaseCommand):
                     )
                     line_map[idx] = line_obj
                     imported_lines += 1
+                    for reason in line_data.get('review_reasons', []):
+                        ImportReviewItem.objects.create(
+                            batch=batch, severity='warning', reason_code=reason,
+                            source_ref=f"{line_data.get('source_sheet', '')}:{line_data.get('source_row', '')}",
+                            payload_json={'po_id': po.pk, 'line_id': line_obj.pk},
+                        )
+                        flagged += 1
+                    delivery_qty = line_data.get('delivery_qty', Decimal('0'))
+                    challan_raw = line_data.get('challan_number', '')
+                    if delivery_qty > 0 and challan_raw:
+                        challan_number, challan_date = parse_challan_number(challan_raw)
+                        challan_date = challan_date or po_date
+                        if challan_date:
+                            challan, _ = Challan.objects.get_or_create(
+                                challan_number=challan_number, challan_date=challan_date, is_deleted=False,
+                                defaults={'site': site, 'source': 'migration', 'delivery_source': line_data.get('delivery_source', '')},
+                            )
+                            ChallanAllocation.objects.get_or_create(challan=challan, line_item=line_obj, defaults={'qty': delivery_qty})
 
                 # Create bills and allocations
                 for bill_key, bill_info in bills_data.items():
@@ -236,7 +257,7 @@ class Command(BaseCommand):
                     continue
                 
                 # NEW PO
-                if po_number_raw and str(po_number_raw).isdigit():
+                if po_number_raw and description and str(po_number_raw).lower() not in {'cancelled', 'po changed', 'po amended'}:
                     site_code, site_name = self._parse_site(site_raw)
                     po_date = self._parse_date(po_date_raw)
                     
@@ -260,6 +281,12 @@ class Command(BaseCommand):
                         amount_raw, gst_raw, sheet_title, row_no
                     )
                     if line:
+                        line['challan_number'] = values[13] if len(values) > 13 else ''
+                        line['delivery_source'] = values[12] if len(values) > 12 else ''
+                        try:
+                            line['delivery_qty'] = Decimal(str(values[10]).replace(',', '')) if len(values) > 10 and values[10] else Decimal('0')
+                        except InvalidOperation:
+                            line['delivery_qty'] = Decimal('0')
                         line_idx = len(current_po["lines"]) + 1
                         line["line_idx"] = line_idx
                         current_po["lines"].append(line)
@@ -329,14 +356,15 @@ class Command(BaseCommand):
 
     def _is_total_row(self, values):
         text = " ".join(str(v).lower() for v in values if v)
-        return any(kw in text for kw in SKIP_KEYWORDS)
+        description = str(values[5]).strip().lower() if len(values) > 5 else ''
+        return any(kw in text for kw in SKIP_KEYWORDS) or bool(re.match(r'^gst\s*\d', description))
 
     def _parse_site(self, site_raw):
         if not site_raw:
             return None, None
         match = re.match(r"\((\w+)\)\s*(.+)", site_raw)
         if match:
-            return match.group(1), match.group(1)
+            return match.group(1), match.group(2)
         return site_raw[:30], site_raw[:30]
 
     def _parse_date(self, date_raw):
@@ -359,6 +387,9 @@ class Command(BaseCommand):
         if any(kw in desc_lower for kw in SKIP_KEYWORDS):
             return None
         
+        review_reasons = []
+        if not str(rate_raw).strip():
+            review_reasons.append('MISSING_RATE')
         try:
             qty = Decimal(str(qty_raw).replace(",", ""))
             if qty <= 0:
@@ -379,6 +410,7 @@ class Command(BaseCommand):
         try:
             gst_rate = Decimal(str(gst_raw).replace(",", ""))
             if gst_rate > 1:
+                review_reasons.append('GST_RATE_OUT_OF_RANGE')
                 gst_rate = gst_rate / 100
         except (InvalidOperation, ValueError):
             gst_rate = Decimal("0")
@@ -393,4 +425,5 @@ class Command(BaseCommand):
             "gst_rate": gst_rate,
             "source_sheet": sheet_title,
             "source_row": row_no,
+            "review_reasons": review_reasons,
         }
